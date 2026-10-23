@@ -1,136 +1,136 @@
-# 실습 (exercises)
+# Exercises
 
-DreamWaQ를 Isaac Sim / Isaac Lab 위에서 **직접 쌓아 올리는** 5단계 실습이다.
-완성본은 이 repo의 `dreamwaq_manager/` · `dreamwaq_direct/` 에 있고, 실습은 그 코드를
-단계별로 도려내 만든 것이다.
+A 5-stage set of exercises in which you **build DreamWaQ up yourself** on top of Isaac Sim / Isaac Lab.
+The finished version lives in this repo's `dreamwaq_manager/` · `dreamwaq_direct/`, and the exercises were made by
+cutting that code out stage by stage.
 
-## 실습 강도 — 4단계
+## Exercise intensity — 4 levels
 
-각 실습에는 레벨 라벨이 붙는다. 지금 무엇을 요구받는지 먼저 확인하고 시작한다.
+Each exercise carries a level label. Check what is being asked of you before you start.
 
-| 레벨 | 이름 | 하는 일 |
+| Level | Name | What you do |
 |:---:|---|---|
-| **L0** | READ | 실행해서 출력만 확인한다. 코드는 읽기만 한다 |
-| **L1** | FILL | `TODO` 빈칸 1~5줄을 채운다. 골격은 주어진다 |
-| **L2** | BUILD | 시그니처와 docstring, 테스트만 주어진다. 본문을 전부 쓴다 |
-| **L3** | DESIGN | 요구사항만 주어진다. 파일을 통째로 쓴다 |
+| **L0** | READ | Run it and just check the output. Only read the code |
+| **L1** | FILL | Fill in `TODO` blanks of 1–5 lines. The skeleton is given |
+| **L2** | BUILD | Only the signature, docstring and tests are given. You write the whole body |
+| **L3** | DESIGN | Only the requirements are given. You write the whole file |
 
-L0에 시간을 쓰지 않는다. 중요한 것은 L2·L3에 몰려 있다.
+Don't spend time on L0. What matters is concentrated in L2 and L3.
 
-## 검증은 두 계층
+## Verification has two tiers
 
-반복 속도가 학습 경험을 좌우한다. Isaac Sim 기동에만 25초가 걸리므로,
-가능한 검증은 전부 Isaac Sim 없이 돌게 만들었다.
+Iteration speed determines the learning experience. Isaac Sim takes 25 seconds just to start,
+so every check that can run without Isaac Sim was made to do so.
 
-| | 명령 | 소요 | 무엇을 보는가 |
+| | Command | Time | What it checks |
 |---|---|---|---|
-| **빠른 검증** | `python check.py` | ~1초 | shape·수식·경계조건. 합성 텐서만 사용 |
-| **느린 검증** | `quick_test.sh` / `python solution.py` | ~40초~ | 실제 env가 뜨고 몇 iteration 도는지 |
+| **Fast check** | `python check.py` | ~1 s | shapes · formulas · boundary conditions. Uses synthetic tensors only |
+| **Slow check** | `quick_test.sh` / `python solution.py` | ~40 s+ | Whether the real env comes up and runs a few iterations |
 
-빠른 검증을 먼저 통과시키고, 마지막에 한 번 느린 검증을 돌린다.
+Pass the fast check first, then run the slow check once at the end.
 
-느린 검증은 실습별 스크립트가 아니라 **단계별로 다르다.**
+The slow check is not a per-exercise script; it **differs by stage.**
 
-- **Stage 1** — 각 `solution.py` / `starter.py` 가 스스로 Isaac Sim 을 띄우고 `[PASS]` 를 찍는다
-- **Stage 2·4** — 프로젝트 모듈을 고치므로 `dreamwaq_manager/scripts/quick_test.sh` (64 envs / 30 iters)
+- **Stage 1** — each `solution.py` / `starter.py` launches Isaac Sim itself and prints `[PASS]`
+- **Stage 2·4** — these modify project modules, so use `dreamwaq_manager/scripts/quick_test.sh` (64 envs / 30 iters)
 
-> **내가 채운 `starter/` 는 학습에 들어가지 않는다.** Stage 2·4 의 `starter/` 는 프로덕션
-> 소스를 잘라 만든 **읽기·연습용 사본**이고, `train.py` / `quick_test.sh` 가 import 하는 것은
-> 설치된 패키지의 원본(`dreamwaq_manager/source/.../algorithms/cenet.py` 등)이다. 즉 느린
-> 검증은 **내 답이 아니라 프로덕션 소스가 도는지**를 본다. 자기 답으로 실제 학습을 돌려 보고
-> 싶으면 프로덕션 소스의 해당 **본문만** 자기 것으로 바꾼다 — starter 파일을 통째로 덮어쓰면
-> 실습을 만들며 가려 둔 것(`DWQ_CENET_*` 게이트, 잠재 진단 로깅 등)까지 함께 지워진다.
-> 되돌릴 때는 `git checkout` 이 있다.
-- **Stage 3** — `python starter.py` 가 toy 환경에서 실제로 학습한다 (CPU 40초)
+> **The `starter/` you fill in does not go into training.** The `starter/` in Stages 2·4 is a **read/practice copy**
+> cut from the production source, and what `train.py` / `quick_test.sh` import is the
+> original in the installed package (`dreamwaq_manager/source/.../algorithms/cenet.py`, etc.). So the slow
+> check verifies **that the production source runs, not your answer**. If you want to run real training with your own answer,
+> replace **only the corresponding body** in the production source with yours — overwriting it with the whole starter file
+> also wipes out what was hidden when making the exercise (the `DWQ_CENET_*` gates, latent diagnostic logging, etc.).
+> To revert, there is `git checkout`.
+- **Stage 3** — `python starter.py` actually trains on a toy environment (40 s on CPU)
 
-> 검사기는 **번들 kit python** 으로 돌린다 — 시스템 `python3` 에는 torch 가 없다.
+> Checkers are run with the **bundled kit python** — the system `python3` doesn't have torch.
 > ```bash
 > ~/IsaacLab/_isaac_sim/python.sh check.py
 > ```
 
-## 단계 구성
+## Stage layout
 
-| Stage | 주제 | 형식 | 실습 | 구성 |
+| Stage | Topic | Format | Exercises | Composition |
 |:---:|---|---|:---:|---|
-| **1** | Isaac Sim / Lab 살펴보기 | 독립 스크립트 | 5 | L0 ×1 · L1 ×3 · L2 ×1 |
-| **2** | 학습 Env 클래스 (Manager vs Direct) | 프로젝트 모듈 부분완성 | 6 | L1 ×2 · L2 ×4 |
-| **3** | 학습 알고리즘 PPO | 독립 스크립트 + 코드 독해 | 4 | L0 ×1 · L1 ×1 · L2 ×2 |
-| **4** | 지형 context 학습 CENet (VAE) | 독립 → 프로젝트 통합 | 4 | **L2 ×3 · L3 ×1** |
-| **5** | inference 실험 결과 비교 | 배포 자산 분석 | 4 | L0 ×1 · L2 ×2 · 서술 ×1 |
+| **1** | Exploring Isaac Sim / Lab | Standalone scripts | 5 | L0 ×1 · L1 ×3 · L2 ×1 |
+| **2** | Training Env class (Manager vs Direct) | Partially completed project modules | 6 | L1 ×2 · L2 ×4 |
+| **3** | Training algorithm PPO | Standalone script + code reading | 4 | L0 ×1 · L1 ×1 · L2 ×2 |
+| **4** | Terrain-context learning CENet (VAE) | Standalone → project integration | 4 | **L2 ×3 · L3 ×1** |
+| **5** | Comparing inference experiment results | Analysis of distributed assets | 4 | L0 ×1 · L2 ×2 · written ×1 |
 
-전체 목록은 `python exercises/tools/make_exercise.py --list` 로 확인한다.
+See the full list with `python exercises/tools/make_exercise.py --list`.
 
-### Stage 1 — Isaac Sim / Lab 살펴보기
+### Stage 1 — Exploring Isaac Sim / Lab
 
-빈 씬 → Go2 스폰 → 관절 PD 제어 → 지형 생성 → 센서(contact / raycaster) 값 읽기.
+Empty scene → spawn Go2 → joint PD control → terrain generation → reading sensor (contact / raycaster) values.
 
-앞의 넷은 L0~L1이다. **마지막 "센서 값 읽기"만 L2**로 올린다 — Stage 2에서 관측을
-만들 때 그대로 쓰는 손기술이기 때문이다.
+The first four are L0–L1. **Only the last one, "reading sensor values", is raised to L2** — because it is the exact skill
+you use when building observations in Stage 2.
 
-### Stage 2 — 학습 Env 클래스
+### Stage 2 — Training Env class
 
-이 강의의 차별점은 **같은 기능을 두 API로 두 번** 구현해 보는 것이다.
+What sets this course apart is implementing **the same functionality twice, with two APIs**.
 
-| 대상 | Manager 방식 | Direct 방식 | 레벨 |
+| Target | Manager style | Direct style | Level |
 |---|---|---|:---:|
-| 관측 | `ObsGroup` + `ObsTerm` | `_get_observations` 인라인 | L2 |
-| 보상 | `rewards.py` + `RewTerm` 가중치 | `_get_rewards` 인라인 | L2 |
-| 종료 | `DoneTerm(illegal_contact)` | `_get_dones` | **L2** |
-| 리셋 / randomization | `EventTerm` | `_reset_idx` | L0 |
+| Observations | `ObsGroup` + `ObsTerm` | `_get_observations` inline | L2 |
+| Rewards | `rewards.py` + `RewTerm` weights | `_get_rewards` inline | L2 |
+| Termination | `DoneTerm(illegal_contact)` | `_get_dones` | **L2** |
+| Reset / randomization | `EventTerm` | `_reset_idx` | L0 |
 
-`velocity_env_cfg.py`(442줄)와 `dreamwaq_env.py`(834줄)를 통째로 시키지 않는다.
-**보상 4개 + Direct 관측 스케일링 + Direct 종료**만 파내고 나머지는 제공한다.
-Manager 쪽 `ObsGroup`/`DoneTerm` 은 import 만으로 kit 커널이 떠서 빠른 검증을 붙일 수 없다 —
-읽기(L0)로 갈음한다. 자세한 이유는 `stage2_env/README.md`.
+You are not asked to write `velocity_env_cfg.py` (442 lines) and `dreamwaq_env.py` (834 lines) wholesale.
+**Only 4 rewards + Direct observation scaling + Direct termination** are carved out; the rest is provided.
+On the Manager side, merely importing `ObsGroup`/`DoneTerm` starts the kit kernel, so no fast check can be attached —
+they are replaced by reading (L0). For the detailed reason see `stage2_env/README.md`.
 
 ### Stage 3 — PPO
 
-이 프로젝트는 `rsl_rl`의 PPO를 그대로 쓴다. 그래서 **분리해서** 다룬다.
+This project uses `rsl_rl`'s PPO as-is. So it is covered **separately**.
 
-1. **최소 PPO를 직접 구현** (L2/L3) — Isaac Sim 없이 도는 독립 스크립트.
-   GAE, clipped surrogate, value loss, entropy 각각 빈칸
-2. **`rsl_rl` PPO를 읽고 매핑** (L0) — "내가 짠 게 여기 이 클래스다"
-3. **cfg 실습** (L1) — `RslRlPpoAlgorithmCfg` 값의 의미, `desired_kl` 적응형 lr,
-   그리고 이 repo의 실전 이슈인 log_std clamp
+1. **Implement a minimal PPO yourself** (L2/L3) — a standalone script that runs without Isaac Sim.
+   GAE, clipped surrogate, value loss and entropy are each a blank
+2. **Read `rsl_rl`'s PPO and map it** (L0) — "what I wrote is this class right here"
+3. **cfg exercise** (L1) — the meaning of `RslRlPpoAlgorithmCfg` values, `desired_kl` adaptive lr,
+   and this repo's real-world issue, the log_std clamp
 
-### Stage 4 — CENet (VAE) ← 최대 강도
+### Stage 4 — CENet (VAE) ← maximum intensity
 
-강의 제목이 걸린 부분이다. 4단으로 쌓는다.
+This is the part the course is named after. It is built up in 4 steps.
 
-1. **순수 VAE** `task01_vae` (L3) — toy 데이터. encode / reparameterize / decode / ELBO
-2. **CENet 구조로 확장** `cenet-forward` (L2) — `obs_history(225)` → `est_vel(3)` + `context(16)`
-3. **손실 세 항** `cenet-loss` (L2) — vel / recon / KL, 리덕션 축 정합과 실효 β
-4. **runner 통합** `runner-augment` (L2) — actor 관측 45 → 64 증강, rollout storage 타이밍,
-   `update()` 호출 지점
+1. **Plain VAE** `task01_vae` (L3) — toy data. encode / reparameterize / decode / ELBO
+2. **Extend to the CENet structure** `cenet-forward` (L2) — `obs_history(225)` → `est_vel(3)` + `context(16)`
+3. **The three loss terms** `cenet-loss` (L2) — vel / recon / KL, matching reduction axes and the effective β
+4. **Runner integration** `runner-augment` (L2) — augmenting actor observation 45 → 64, rollout storage timing,
+   where `update()` is called
 
-toy VAE 와 CENet 의 차이는 두 군데뿐이다 — `est_vel` 가지가 붙고, 복원 대상이 자기 자신이
-아니라 **다음 스텝 관측**이다. 자세한 것은 `stage4_cenet/README.md`.
+The toy VAE and CENet differ in only two places — an `est_vel` branch is attached, and the reconstruction target is not itself
+but **the next step's observation**. For details see `stage4_cenet/README.md`.
 
-### Stage 5 — inference 실험 결과 비교
+### Stage 5 — Comparing inference experiment results
 
-**전제: 학습자는 full training을 돌리지 않는다.** 배포 자산은 4096 envs × **4000 iter**
-로 돌렸고 rough 1 run 이 약 2시간 50분, 6 run 이면 10시간이 넘는다. 대신 강사가 미리 돌린
-**6개 run의 체크포인트 · 영상 · tensorboard 로그를 배포 자산으로 쓴다**.
+**Premise: learners do not run full training.** The distributed assets were trained with 4096 envs × **4000 iter**;
+one rough run takes about 2 h 50 min, and 6 runs take over 10 hours. Instead, **the checkpoints · videos · tensorboard logs
+of the 6 runs the instructor ran in advance are used as distributed assets**.
 
-학습자는 자기 구현으로 `quick_test` 규모(64 envs / 30 iter)에서 "돌아간다"만 확인하고,
-결과 해석은 배포 자산으로 한다.
+Learners only confirm that their own implementation "runs" at `quick_test` scale (64 envs / 30 iter),
+and interpret results using the distributed assets.
 
-- `play.py`로 Base / Oracle / Waq 체크포인트 비교 + 영상 (L0)
-- tensorboard 로그에서 곡선을 뽑아 3종 비교 플롯 (L2)
-- **Waq − Base = CENet의 순수 기여**, **Oracle − Waq = 남은 격차** 해석 (서술)
-- 결과가 뒤집혔을 때 **체크포인트 포렌식**으로 CENet 붕괴를 판정 (L2)
+- Compare Base / Oracle / Waq checkpoints with `play.py` + videos (L0)
+- Extract curves from tensorboard logs into a 3-way comparison plot (L2)
+- Interpret **Waq − Base = pure contribution of CENet**, **Oracle − Waq = remaining gap** (written)
+- When results flip, diagnose CENet collapse via **checkpoint forensics** (L2)
 
-실측 결론: rough 에서 `Base(0.5492) < Waq(0.5565) < Oracle(0.5822)` 로 논문 순서가 나왔고,
-flat 에서는 `Waq−Base` 가 노이즈와 구분되지 않는다 (Base 가 이미 0.938 로 천장 근처다).
-**둘 다 교재다** — 왜 그런지가 Stage 5 의 질문이다.
+Measured conclusion: on rough the paper ordering held, `Base(0.5492) < Waq(0.5565) < Oracle(0.5822)`,
+while on flat `Waq−Base` is indistinguishable from noise (Base is already near the ceiling at 0.938).
+**Both are teaching material** — why this happens is the question of Stage 5.
 
-## 디렉토리 규약
+## Directory conventions
 
 ```
 exercises/
-├── README.md              # 이 문서
+├── README.md              # this document
 ├── tools/
-│   └── make_exercise.py   # solution → starter 생성기
+│   └── make_exercise.py   # solution → starter generator
 ├── stage1_isaac_basics/
 ├── stage2_env/
 ├── stage3_ppo/
@@ -138,64 +138,64 @@ exercises/
 └── stage5_compare/
 ```
 
-각 실습 폴더는 다음을 갖는다.
+Each exercise folder contains the following.
 
 ```
-taskNN_<name>/               # 독립 실습 (Stage 1·3, task01_vae)
-├── README.md      # 목표 · 레벨 · 힌트 · 통과 기준
-├── solution.py    # 완성본 (마커가 들어 있다)
-├── starter.py     # 학습자가 채우는 파일 (생성물 — 직접 편집하지 않는다)
-└── check.py       # 빠른 검증 (L0 실습은 없다)
+taskNN_<name>/               # standalone exercise (Stage 1·3, task01_vae)
+├── README.md      # goal · level · hints · pass criteria
+├── solution.py    # finished version (contains markers)
+├── starter.py     # file the learner fills in (generated — do not edit directly)
+└── check.py       # fast check (none for L0 exercises)
 
-<id>/                        # 프로젝트 모듈 실습 (Stage 2·4)
+<id>/                        # project module exercise (Stage 2·4)
 ├── README.md
-├── starter/<원본파일명>.py   # 생성물 — 프로젝트 소스의 사본에 TODO 를 뚫은 것
+├── starter/<original_filename>.py   # generated — a copy of the project source with TODO holes punched in
 └── check.py
 ```
 
-## starter는 손으로 만들지 않는다
+## Starters are not made by hand
 
-`starter.py`는 **항상 solution에서 생성**한다. 두 벌을 손으로 관리하면 반드시 어긋난다.
+`starter.py` is **always generated from the solution**. Maintaining two copies by hand inevitably drifts.
 
 ```bash
-python exercises/tools/make_exercise.py --list           # 실습 전체 보기
-python exercises/tools/make_exercise.py --id cenet-loss  # starter 생성
-python exercises/tools/make_exercise.py --all --check    # 최신인지 검사 (CI용)
+python exercises/tools/make_exercise.py --list           # list all exercises
+python exercises/tools/make_exercise.py --id cenet-loss  # generate a starter
+python exercises/tools/make_exercise.py --all --check    # check they are up to date (for CI)
 ```
 
-선언 방식은 두 가지고, **solution 이 프로덕션 코드인지 강의 전용 코드인지**로 갈린다.
+There are two ways to declare them, split by **whether the solution is production code or course-only code**.
 
-### 1. spec 파일 — 프로젝트 모듈 (Stage 2·4)
+### 1. Spec files — project modules (Stage 2·4)
 
-`dreamwaq_manager/` · `dreamwaq_direct/` 의 **소스는 한 글자도 건드리지 않는다.**
-실습 정의는 `exercises/specs/<id>.toml` 에 두고, `body` 에 잘라낼 구간을 그대로 적는다.
+**Not a single character of the `dreamwaq_manager/` · `dreamwaq_direct/` sources is touched.**
+Exercise definitions live in `exercises/specs/<id>.toml`, and `body` contains the section to cut out verbatim.
 
 ```toml
 id     = "cenet-loss"
 level  = 2
 stage  = "stage4_cenet"
 source = "dreamwaq_manager/.../cenet.py"
-task   = "CENet 의 세 손실 항을 완성한다"
+task   = "Complete CENet's three loss terms"
 hints  = ["...", "..."]
 body   = '''            mse_loss = nn.MSELoss()
 ...
 '''
 ```
 
-생성기가 **실제 소스를 읽어** `body` 를 찾아 TODO 로 바꾼다. 소스가 바뀌어 `body` 를
-못 찾으면 **큰 소리로 실패한다** — 조용히 어긋난 starter 가 나오는 일이 없다.
-그때는 `body` 를 현재 코드로 갱신하면 된다.
+The generator **reads the actual source**, finds `body` and replaces it with a TODO. If the source changes and `body`
+can't be found, it **fails loudly** — you never get a silently drifted starter.
+When that happens, just update `body` to the current code.
 
-### 2. 인라인 마커 — 독립 실습 (Stage 1·3)
+### 2. Inline markers — standalone exercises (Stage 1·3)
 
-이 파일들은 애초에 강의 자료라 마커를 심어도 잃을 게 없다. 마커는 주석이므로
-`solution.py` 는 그대로 실행된다.
+These files are course material to begin with, so nothing is lost by planting markers in them. Markers are comments, so
+`solution.py` runs as-is.
 
 ```python
-# ex:begin id=pd-target level=1 stage=stage1_isaac_basics task=관절 목표를 계산한다
+# ex:begin id=pd-target level=1 stage=stage1_isaac_basics task=compute the joint target
 #   hint: joint_target = default_joint_pos + action * ACTION_SCALE
 return robot.data.default_joint_pos + action * ACTION_SCALE
 # ex:end
 ```
 
-`solution.py` 와 `starter.py` 가 실습 폴더 안에 나란히 있다.
+`solution.py` and `starter.py` sit side by side in the exercise folder.

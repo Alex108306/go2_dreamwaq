@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""빠른 검증 — runner-augment.
+"""Fast check — runner-augment.
 
-Isaac Sim 없이 돈다. `_build_actor_obs` 를 클래스에서 떼어내 가짜 self 로 부른다
-(러너 전체를 띄우려면 env 가 필요하지만, 이 메서드는 self 의 몇 가지만 쓴다).
+Runs without Isaac Sim. It detaches `_build_actor_obs` from the class and calls it with a fake self
+(launching the whole runner would need an env, but this method only uses a few things from self).
 
-    python check.py                 # starter/dreamwaq_runner.py 를 검사
-    python check.py --solution      # 완성본을 검사 (검사기 자체를 점검할 때)
+    python check.py                 # check starter/dreamwaq_runner.py
+    python check.py --solution      # check the finished version (to test the checker itself)
 """
 from __future__ import annotations
 
@@ -25,13 +25,13 @@ SOLUTION = (
 STARTER = HERE / "starter" / "dreamwaq_runner.py"
 
 NUM_BASE, NUM_VEL, LATENT, NUM_SCAN, BATCH = 45, 3, 16, 187, 8
-NORM_GAIN = 2.0  # 가짜 정규화: base 관측만 이 배수로 바뀐다 → 어디에 적용됐는지 눈에 보인다
+NORM_GAIN = 2.0  # fake normalization: only the base observation is scaled by this factor → you can see where it was applied
 
 
 def load_build_actor_obs(path: Path):
     """Load the module and return the *unbound* `_build_actor_obs`."""
     if not path.exists():
-        raise SystemExit(f"파일이 없다: {path}\n  exercises/tools/make_exercise.py --id runner-augment 로 생성한다")
+        raise SystemExit(f"File not found: {path}\n  generate it with exercises/tools/make_exercise.py --id runner-augment")
     spec = importlib.util.spec_from_file_location(f"_runner_{path.parent.name}", path)
     mod = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = mod
@@ -40,13 +40,13 @@ def load_build_actor_obs(path: Path):
 
 
 class FakeSelf:
-    """`_build_actor_obs` 가 실제로 건드리는 것만 갖춘 가짜 러너."""
+    """A fake runner with only what `_build_actor_obs` actually touches."""
 
     def __init__(self, use_exteroception: bool):
         self.use_exteroception = use_exteroception
         self.num_base_obs = NUM_BASE
-        # 주어진 NaN 경고 블록이 읽는 플래그. True 로 두면 경고를 한 번도 안 찍으므로
-        # 검사 출력이 깨끗하다 (경고 자체는 이 실습의 채점 대상이 아니다).
+        # The flag read by the given NaN warning block. Setting it to True means the warning is never printed,
+        # keeping the check output clean (the warning itself isn't graded in this exercise).
         self._nan_warned = True
 
     def _norm_base(self, base_obs):
@@ -58,11 +58,11 @@ class FakeSelf:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--solution", action="store_true", help="완성본을 검사한다")
+    ap.add_argument("--solution", action="store_true", help="check the finished version")
     args = ap.parse_args()
 
     path = SOLUTION if args.solution else STARTER
-    print(f"검사 대상: {path.relative_to(REPO_ROOT)}\n")
+    print(f"Checking: {path.relative_to(REPO_ROOT)}\n")
     build = load_build_actor_obs(path)
 
     torch.manual_seed(0)
@@ -82,81 +82,81 @@ def main() -> int:
         return cond
 
     def skip(name: str, why: str) -> None:
-        """앞 검사가 실패하면 뒤 검사는 판정할 수 없다 — FAIL 로 세면 오진이 된다."""
+        """If an earlier check fails, later checks can't be judged — counting them as FAIL would be a misdiagnosis."""
         print(f"  [\033[1;33mSKIP\033[0m] {name}  — {why}")
 
     # --- 1. flat: 45 + 3 + 16 = 64 ----------------------------------------------
     try:
         out = build(FakeSelf(use_exteroception=False), base, vel, ctx, src_flat)
     except NotImplementedError:
-        print("  아직 TODO(runner-augment) 가 비어 있다. starter/dreamwaq_runner.py 를 채운다.")
+        print("  TODO(runner-augment) is still empty. Fill in starter/dreamwaq_runner.py.")
         return 1
-    check("1. flat 에서 actor 관측이 64 차원이다 (45+3+16)",
+    check("1. on flat the actor observation is 64-dim (45+3+16)",
           tuple(out.shape) == (BATCH, NUM_BASE + NUM_VEL + LATENT),
-          f"실제 {tuple(out.shape)}")
+          f"actual {tuple(out.shape)}")
     if tuple(out.shape) != (BATCH, NUM_BASE + NUM_VEL + LATENT):
-        print("\n\033[1;31m차원이 달라 이후 검사를 진행할 수 없다.\033[0m")
+        print("\n\033[1;31mThe dimensions differ, so the remaining checks can't proceed.\033[0m")
         return 1
 
-    # --- 2. 순서: [norm(base), vel, context] --------------------------------------
-    # 4·5 번은 고정 인덱스로 특정 자리를 찌른다. 순서가 틀렸으면 그 검사들은 "무엇이 틀렸는지"
-    # 를 오진하므로(예: 순서 버그를 "nan_to_num 을 빠뜨렸다"로 보고), 여기서 걸리면 건너뛴다.
-    order_ok = check("2. 앞 45 는 정규화된 base 관측이다",
+    # --- 2. Order: [norm(base), vel, context] --------------------------------------
+    # Checks 4·5 poke specific positions with fixed indices. If the order is wrong they misdiagnose "what went wrong"
+    # (e.g. reporting an order bug as "nan_to_num was forgotten"), so if this fails they are skipped.
+    order_ok = check("2. the first 45 are the normalized base observation",
                      torch.allclose(out[:, :NUM_BASE], base * NORM_GAIN, atol=1e-6),
-                     "base 를 정규화하지 않았거나 순서가 다르다")
-    order_ok &= check("2. 그 다음 3 은 vel_input 이다 (정규화하지 않는다)",
+                     "base wasn't normalized, or the order differs")
+    order_ok &= check("2. the next 3 are vel_input (not normalized)",
                       torch.allclose(out[:, NUM_BASE:NUM_BASE + NUM_VEL], vel, atol=1e-6),
-                      "vel 에도 정규화를 먹였거나 context 를 먼저 이었다")
-    order_ok &= check("2. 마지막 16 은 context_vec 이다 (정규화하지 않는다)",
+                      "normalization was applied to vel too, or context was concatenated first")
+    order_ok &= check("2. the last 16 are context_vec (not normalized)",
                       torch.allclose(out[:, NUM_BASE + NUM_VEL:], ctx, atol=1e-6),
-                      "context 에 정규화를 먹였거나 vel 과 순서가 바뀌었다")
+                      "normalization was applied to context, or its order was swapped with vel")
 
-    # --- 3. rough: exteroception 이 맨 뒤에 붙는다 ---------------------------------
+    # --- 3. rough: exteroception is appended at the very end ---------------------------------
     out_r = build(FakeSelf(use_exteroception=True), base, vel, ctx, src_rough)
     want_r = NUM_BASE + NUM_VEL + LATENT + NUM_SCAN
-    check("3. rough 에서 height_scan(187) 이 뒤에 붙어 251 차원이다",
-          tuple(out_r.shape) == (BATCH, want_r), f"실제 {tuple(out_r.shape)}")
+    check("3. on rough, height_scan (187) is appended to make 251 dims",
+          tuple(out_r.shape) == (BATCH, want_r), f"actual {tuple(out_r.shape)}")
     if tuple(out_r.shape) == (BATCH, want_r):
-        check("3. height_scan 은 맨 뒤에 그대로 붙는다",
+        check("3. height_scan is appended as-is at the very end",
               torch.allclose(out_r[:, NUM_BASE + NUM_VEL + LATENT:], src_rough[:, NUM_BASE:], atol=1e-6))
-        check("3. 앞 64 는 flat 일 때와 같다",
+        check("3. the first 64 are the same as on flat",
               torch.allclose(out_r[:, :NUM_BASE + NUM_VEL + LATENT], out, atol=1e-6))
 
-    # --- 4. NaN / inf 를 흘려보내지 않는다 -----------------------------------------
-    # CENet 이 발산하면 NaN 이 그대로 actor 로 들어가 정책이 통째로 망가진다.
+    # --- 4. Don't let NaN / inf through -----------------------------------------
+    # If CENet diverges, NaN goes straight into the actor and the whole policy is ruined.
     bad_vel = vel.clone()
     bad_vel[0, 0] = float("nan")
     bad_vel[1, 1] = float("inf")
     bad_vel[2, 2] = float("-inf")
     out_bad = build(FakeSelf(use_exteroception=False), base, bad_vel, ctx, src_flat)
-    # 이 항목만 자리와 무관하다 — 어디에 붙였든 유한하면 통과한다.
-    check("4. NaN/inf 가 남아 있지 않다", bool(torch.isfinite(out_bad).all()),
-          "torch.nan_to_num 을 빠뜨렸다")
+    # Only this item is position-independent — it passes as long as it's finite, wherever it was applied.
+    check("4. no NaN/inf remains", bool(torch.isfinite(out_bad).all()),
+          "torch.nan_to_num is missing")
 
-    blocked = "앞 검사(2. 순서)가 실패해 판정 불가 — 고정 자리를 찌르는 검사다"
+    blocked = "can't be judged because an earlier check (2. order) failed — this check pokes fixed positions"
     if order_ok:
-        check("4. nan → 0.0", float(out_bad[0, NUM_BASE]) == 0.0, f"실제 {float(out_bad[0, NUM_BASE])}")
-        check("4. +inf → 10.0", float(out_bad[1, NUM_BASE + 1]) == 10.0, f"실제 {float(out_bad[1, NUM_BASE + 1])}")
-        check("4. -inf → -10.0", float(out_bad[2, NUM_BASE + 2]) == -10.0, f"실제 {float(out_bad[2, NUM_BASE + 2])}")
+        check("4. nan → 0.0", float(out_bad[0, NUM_BASE]) == 0.0, f"actual {float(out_bad[0, NUM_BASE])}")
+        check("4. +inf → 10.0", float(out_bad[1, NUM_BASE + 1]) == 10.0, f"actual {float(out_bad[1, NUM_BASE + 1])}")
+        check("4. -inf → -10.0", float(out_bad[2, NUM_BASE + 2]) == -10.0, f"actual {float(out_bad[2, NUM_BASE + 2])}")
     else:
         skip("4. nan → 0.0 / +inf → 10.0 / -inf → -10.0", blocked)
 
-    # --- 5. 정상 값은 클램프되지 않는다 ---------------------------------------------
-    # nan_to_num 은 NaN/inf 만 건드린다. 유한한 큰 값까지 자르면 학습 신호가 왜곡된다.
+    # --- 5. Normal values are not clamped ---------------------------------------------
+    # nan_to_num only touches NaN/inf. Cutting even finite large values distorts the learning signal.
     if order_ok:
         big_ctx = torch.full((BATCH, LATENT), 12345.0)
         out_big = build(FakeSelf(use_exteroception=False), base, vel, big_ctx, src_flat)
-        check("5. 유한한 큰 값은 그대로 통과한다 (clamp 가 아니다)",
+        check("5. finite large values pass through unchanged (not a clamp)",
               torch.allclose(out_big[:, NUM_BASE + NUM_VEL:], big_ctx, atol=1e-6),
-              "torch.clamp 를 썼을 수 있다 — nan_to_num 이어야 한다")
+              "you may have used torch.clamp — it should be nan_to_num")
     else:
-        skip("5. 유한한 큰 값은 그대로 통과한다 (clamp 가 아니다)", blocked)
+        skip("5. finite large values pass through unchanged (not a clamp)", blocked)
 
     print()
     if failures:
-        print(f"\033[1;31m{len(failures)}개 실패\033[0m: {', '.join(failures)}")
+        print(f"\033[1;31m{len(failures)} failed\033[0m: {', '.join(failures)}")
         return 1
-    print("\033[1;32m전부 통과.\033[0m Stage 4 실습을 모두 마쳤다.")
+    print("\033[1;32mAll passed.\033[0m You've finished all the Stage 4 exercises.")
     return 0
 
 

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""빠른 검증 — reward-foot-clearance.
+"""Fast check — reward-foot-clearance.
 
-Isaac Sim 없이 돈다. env / asset / height sensor 를 최소 스텁으로 대체한다.
+Runs without Isaac Sim. env / asset / height sensor are replaced with minimal stubs.
 
-    python check.py                 # starter/rewards.py 를 검사
-    python check.py --solution      # 완성본을 검사
+    python check.py                 # check starter/rewards.py
+    python check.py --solution      # check the finished version
 """
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ class FakeAsset:
         vel = torch.zeros(n, f, 3)
         vel[:, :, 0] = feet_vel_xy[..., 0]
         vel[:, :, 1] = feet_vel_xy[..., 1]
-        vel[:, :, 2] = 99.0  # z 속도를 섞어 넣는다 — 답에 반영되면 안 된다
+        vel[:, :, 2] = 99.0  # mix in z velocity — it must not affect the answer
         self.data.body_pos_w = pos
         self.data.body_lin_vel_w = vel
 
@@ -79,7 +79,7 @@ def main() -> int:
     args = ap.parse_args()
 
     path = SOLUTION if args.solution else STARTER
-    print(f"검사 대상: {path.relative_to(REPO_ROOT)}\n")
+    print(f"Checking: {path.relative_to(REPO_ROOT)}\n")
     mod = load_module(path)
     fn = mod.foot_clearance_l2
 
@@ -94,7 +94,7 @@ def main() -> int:
     def call(feet_z, speed, terrain_z=None, use_sensor=True, with_nan=False):
         terrain = torch.zeros(NUM_ENVS) if terrain_z is None else terrain_z
         vel = torch.zeros(NUM_ENVS, NUM_FEET, 2)
-        vel[..., 0] = speed  # vx 만 준다 → 측면속도 = |vx|
+        vel[..., 0] = speed  # only vx → lateral velocity = |vx|
         env = FakeEnv(FakeAsset(feet_z, vel), FakeSensor(terrain, with_nan))
         return fn(
             env,
@@ -103,64 +103,64 @@ def main() -> int:
             desired_height=DESIRED,
         )
 
-    flat = torch.full((NUM_ENVS, NUM_FEET), DESIRED)  # 정확히 목표 높이
+    flat = torch.full((NUM_ENVS, NUM_FEET), DESIRED)  # exactly the target height
     try:
         r = call(flat, speed=1.0)
     except NotImplementedError:
-        print("  아직 TODO(reward-foot-clearance) 가 비어 있다. starter/rewards.py 를 채운다.")
+        print("  TODO(reward-foot-clearance) is still empty. Fill in starter/rewards.py.")
         return 1
 
-    check("1. 반환이 (num_envs,) 스칼라 벡터", tuple(r.shape) == (NUM_ENVS,), f"shape={tuple(r.shape)}")
-    check("2. 발이 정확히 목표 높이면 페널티 0", torch.allclose(r, torch.zeros(NUM_ENVS), atol=1e-6),
+    check("1. returns a (num_envs,) scalar vector", tuple(r.shape) == (NUM_ENVS,), f"shape={tuple(r.shape)}")
+    check("2. penalty 0 when the feet are exactly at the target height", torch.allclose(r, torch.zeros(NUM_ENVS), atol=1e-6),
           f"{r[0].item():.6f}")
 
-    # 발이 멈춰 있으면(측면속도 0) 높이가 틀려도 벌하지 않는다 — 딛고 선 발은 봐준다.
+    # If a foot is stationary (lateral velocity 0), it isn't penalized even if the height is off — planted feet get a pass.
     r = call(torch.zeros(NUM_ENVS, NUM_FEET), speed=0.0)
-    check("3. 측면속도 0 이면 페널티 0 (딛고 선 발)", torch.allclose(r, torch.zeros(NUM_ENVS), atol=1e-6),
+    check("3. penalty 0 when lateral velocity is 0 (planted foot)", torch.allclose(r, torch.zeros(NUM_ENVS), atol=1e-6),
           f"{r[0].item():.6f}")
 
-    # 알려진 값: 발 높이 0, 목표 0.12, 속도 1.0, 발 4개 → 4 * 0.12^2 * 1 = 0.0576
+    # Known value: foot height 0, target 0.12, velocity 1.0, 4 feet → 4 * 0.12^2 * 1 = 0.0576
     r = call(torch.zeros(NUM_ENVS, NUM_FEET), speed=1.0)
-    check("4. 높이 0 / 속도 1 / 발 4개 → 4 x 0.12^2 = 0.0576",
+    check("4. height 0 / velocity 1 / 4 feet → 4 x 0.12^2 = 0.0576",
           torch.allclose(r, torch.full((NUM_ENVS,), 4 * DESIRED**2), atol=1e-6),
-          f"{r[0].item():.6f} (기대 {4 * DESIRED**2:.4f})")
+          f"{r[0].item():.6f} (expected {4 * DESIRED**2:.4f})")
 
-    # 속도에 선형 비례한다.
+    # Linearly proportional to velocity.
     r1 = call(torch.zeros(NUM_ENVS, NUM_FEET), speed=1.0)
     r2 = call(torch.zeros(NUM_ENVS, NUM_FEET), speed=2.0)
-    check("5. 페널티가 측면속도에 선형 비례", torch.allclose(r2, 2 * r1, atol=1e-6),
+    check("5. penalty is linearly proportional to lateral velocity", torch.allclose(r2, 2 * r1, atol=1e-6),
           f"{r1[0].item():.4f} → {r2[0].item():.4f}")
 
-    # 핵심: 지형이 올라가면 '지형 위 높이'로 보정되어야 한다.
-    # 발 월드z = 0.5, 지형 = 0.38 → 지형 위 0.12 = 목표 → 페널티 0.
+    # Key: when the terrain rises, it must be corrected to 'height above terrain'.
+    # foot world z = 0.5, terrain = 0.38 → 0.12 above terrain = target → penalty 0.
     r = call(torch.full((NUM_ENVS, NUM_FEET), 0.5), speed=1.0,
              terrain_z=torch.full((NUM_ENVS,), 0.5 - DESIRED))
-    check("6. 지형 높이를 빼서 '지형 위 높이'로 본다",
+    check("6. subtracts terrain height to use 'height above terrain'",
           torch.allclose(r, torch.zeros(NUM_ENVS), atol=1e-5),
-          f"{r[0].item():.6f} — 월드 z 를 그대로 쓰면 0 이 안 나온다")
+          f"{r[0].item():.6f} — using world z as-is doesn't give 0")
 
-    # NaN/inf 가 섞인 ray hit 을 그대로 쓰면 결과가 오염된다.
+    # Using ray hits contaminated with NaN/inf as-is pollutes the result.
     r = call(flat, speed=1.0, with_nan=True)
-    check("7. ray hit 의 NaN/inf 를 0 으로 정리한다", bool(torch.isfinite(r).all()),
-          f"{r.tolist()} — torch.nan_to_num 이 빠졌다")
+    check("7. cleans NaN/inf in ray hits to 0", bool(torch.isfinite(r).all()),
+          f"{r.tolist()} — torch.nan_to_num is missing")
 
-    # z 속도는 무시해야 한다 (스텁이 vz=99 를 넣어 두었다).
+    # z velocity must be ignored (the stub put in vz=99).
     r = call(torch.zeros(NUM_ENVS, NUM_FEET), speed=1.0)
-    check("8. 측면속도에 z 성분을 넣지 않았다",
+    check("8. doesn't include the z component in lateral velocity",
           torch.allclose(r, torch.full((NUM_ENVS,), 4 * DESIRED**2), atol=1e-6),
-          f"{r[0].item():.4f} — vz=99 가 새어 들어왔다")
+          f"{r[0].item():.4f} — vz=99 leaked in")
 
-    # height_sensor_cfg=None 이면 지형 보정 없이 월드 z 를 쓴다 (평지 전용 폴백).
+    # With height_sensor_cfg=None, world z is used without terrain correction (flat-only fallback).
     r = call(torch.zeros(NUM_ENVS, NUM_FEET), speed=1.0, use_sensor=False)
-    check("9. 센서가 None 이면 월드 z 폴백",
+    check("9. falls back to world z if the sensor is None",
           torch.allclose(r, torch.full((NUM_ENVS,), 4 * DESIRED**2), atol=1e-6),
           f"{r[0].item():.4f}")
 
     print()
     if failures:
-        print(f"\033[1;31m{len(failures)}개 실패\033[0m: {', '.join(failures)}")
+        print(f"\033[1;31m{len(failures)} failed\033[0m: {', '.join(failures)}")
         return 1
-    print("\033[1;32m전부 통과.\033[0m")
+    print("\033[1;32mAll passed.\033[0m")
     return 0
 
 

@@ -1,26 +1,26 @@
-"""Stage 3 공용 toy 환경 — 1D 질점의 명령 속도 추종.  [제공 코드 · 읽기만]
+"""Shared Stage 3 toy environment — commanded velocity tracking of a 1D point mass.  [provided code · read only]
 
-Isaac Sim 없이 1초 만에 도는 벡터화 환경이다. 로코모션의 본질만 남겼다.
+A vectorized environment that runs in 1 second without Isaac Sim. Only the essence of locomotion is kept.
 
-    상태   v        현재 속도
-    명령   v_cmd    추종해야 할 속도 (에피소드마다 U[-1, 1] 로 다시 뽑는다)
-    액션   a        가속도 (정책 출력, [-1, 1] 로 클립)
-    전이   v <- v + (a * action_scale - drag * v) * dt
-    보상   exp{-4 (v_cmd - v)^2}          <- DreamWaQ 논문 Table I 과 같은 형태
-    관측   [v, v_cmd, a_prev]             (3차원)
+    state        v        current velocity
+    command      v_cmd    velocity to track (redrawn from U[-1, 1] every episode)
+    action       a        acceleration (policy output, clipped to [-1, 1])
+    transition   v <- v + (a * action_scale - drag * v) * dt
+    reward       exp{-4 (v_cmd - v)^2}          <- same form as Table I of the DreamWaQ paper
+    observation  [v, v_cmd, a_prev]             (3-dim)
 
-DreamWaQ 와의 대응:
+Correspondence with DreamWaQ:
 
-    | 여기            | DreamWaQ                          |
+    | here            | DreamWaQ                          |
     |-----------------|-----------------------------------|
     | v               | base_lin_vel                      |
     | v_cmd           | velocity_commands                 |
-    | a               | 관절 목표 오프셋 (action * 0.25)  |
+    | a               | joint target offset (action * 0.25) |
     | exp{-4 e^2}     | track_lin_vel_xy_exp (std=sqrt(0.25)) |
-    | drag            | 지면 마찰 / 중력                  |
+    | drag            | ground friction / gravity         |
 
-PPO 는 이 환경에서도 로코모션에서와 똑같이 동작한다. 알고리즘을 먼저 여기서 이해하고,
-Stage 4 에서 진짜 로봇으로 돌아간다.
+PPO behaves in this environment exactly as it does in locomotion. Understand the algorithm here first,
+then go back to the real robot in Stage 4.
 """
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ ACT_DIM = 1
 
 
 class VelocityTrackingEnv:
-    """벡터화된 1D 속도 추종 환경. gym 의존성 없이 torch 만 쓴다."""
+    """Vectorized 1D velocity-tracking environment. Uses only torch, no gym dependency."""
 
     def __init__(
         self,
@@ -78,7 +78,7 @@ class VelocityTrackingEnv:
         return self._obs()
 
     def step(self, action: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """한 스텝 진행. 반환 (obs, reward, done)."""
+        """Advance one step. Returns (obs, reward, done)."""
         a = action.squeeze(-1).clamp(-1.0, 1.0)
         self.vel = self.vel + (a * self.action_scale - self.drag * self.vel) * self.dt
         self.prev_action = a
@@ -98,15 +98,15 @@ class VelocityTrackingEnv:
 
 
 def perfect_tracking_reward() -> float:
-    """완벽히 추종했을 때의 스텝 보상 = 1.0. 학습 결과를 이 값과 비교한다."""
+    """Per-step reward with perfect tracking = 1.0. Training results are compared against this value."""
     return 1.0
 
 
 def standing_still_reward(num_samples: int = 100_000, seed: int = 0) -> float:
-    """아무것도 안 하고 v=0 으로 있을 때의 기대 보상.
+    """Expected reward when doing nothing and staying at v=0.
 
-    학습이 '진짜로' 됐는지 판정하는 하한선이다. 이 값을 못 넘으면 정책은
-    아무것도 배우지 않은 것이다. (DreamWaQ 에서 '서 있기가 최적' 이 되는 실패와 같은 발상.)
+    It's the floor for judging whether training 'really' worked. If the policy can't beat this value,
+    it hasn't learned anything. (Same idea as the failure in DreamWaQ where 'standing still is optimal'.)
     """
     g = torch.Generator().manual_seed(seed)
     cmd = torch.rand(num_samples, generator=g) * 2.0 - 1.0
@@ -116,12 +116,12 @@ def standing_still_reward(num_samples: int = 100_000, seed: int = 0) -> float:
 if __name__ == "__main__":
     env = VelocityTrackingEnv(num_envs=8)
     obs = env.reset()
-    print(f"관측 shape: {tuple(obs.shape)}  (v, v_cmd, a_prev)")
-    print(f"완벽 추종 보상 : {perfect_tracking_reward():.4f}")
-    print(f"정지 시 보상   : {standing_still_reward():.4f}   <- 학습이 이걸 못 넘으면 실패")
+    print(f"observation shape: {tuple(obs.shape)}  (v, v_cmd, a_prev)")
+    print(f"Perfect tracking reward : {perfect_tracking_reward():.4f}")
+    print(f"Standing-still reward   : {standing_still_reward():.4f}   <- training fails if it can't beat this")
 
     total = torch.zeros(env.num_envs)
     for _ in range(env.episode_length):
         _, r, _ = env.step(torch.rand(env.num_envs, 1) * 2 - 1)
         total += r
-    print(f"랜덤 정책 평균 : {(total / env.episode_length).mean():.4f}")
+    print(f"Random policy mean      : {(total / env.episode_length).mean():.4f}")

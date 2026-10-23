@@ -1,50 +1,50 @@
-# task01 — GAE 어드밴티지  `L2 · BUILD`
+# task01 — GAE advantages  `L2 · BUILD`
 
-## 목표
+## Goal
 
-"이 행동이 평균보다 얼마나 좋았나"를 계산한다. PPO 가 무엇을 강화하고 무엇을 억제할지
-정하는 신호다.
+Compute "how much better than average this action was". It's the signal that decides what PPO
+reinforces and what it suppresses.
 
 ```
-delta_t = r_t + γ V(s_{t+1})(1 - done_t) - V(s_t)        <- TD 오차
-A_t     = delta_t + γ λ (1 - done_t) A_{t+1}             <- 재귀
-returns = A + V                                          <- critic 의 회귀 타깃
+delta_t = r_t + γ V(s_{t+1})(1 - done_t) - V(s_t)        <- TD error
+A_t     = delta_t + γ λ (1 - done_t) A_{t+1}             <- recursion
+returns = A + V                                          <- the critic's regression target
 ```
 
-`λ` 가 편향-분산을 조절한다. `λ=0` 이면 1-step TD (편향 큼, 분산 작음),
-`λ=1` 이면 몬테카를로 (편향 없음, 분산 큼). 실제 프로젝트는 `λ=0.95` 를 쓴다.
+`λ` controls the bias–variance tradeoff. `λ=0` gives 1-step TD (high bias, low variance),
+`λ=1` gives Monte Carlo (no bias, high variance). The real project uses `λ=0.95`.
 
-## 채울 곳
+## What to fill in
 
-`starter.py` 의 `TODO(ppo-gae)` — `compute_gae` 본문.
+`TODO(ppo-gae)` in `starter.py` — the body of `compute_gae`.
 
-**함정 셋**
+**Three traps**
 
-1. **뒤에서 앞으로** 훑어야 `A_{t+1}` 을 이미 알고 있다 (`reversed`)
-2. `t = T-1` 에서 `V(s_{t+1})` 은 인자로 받은 `last_value` 다 — 롤아웃이 에피소드
-   중간에 잘렸으므로 거기서 부트스트랩한다
-3. `done` 인 스텝에서는 다음 상태로 이어지지 않으므로 `(1 - done)` 으로 **두 군데** 끊는다
+1. Sweep **from back to front** so `A_{t+1}` is already known (`reversed`)
+2. At `t = T-1`, `V(s_{t+1})` is the `last_value` passed in — the rollout was cut off mid-episode,
+   so bootstrap from there
+3. At `done` steps there's no continuation to the next state, so cut with `(1 - done)` in **two places**
 
-## 검증
+## Checks
 
 ```bash
 python check.py
 ```
 
-| # | 통과 기준 |
+| # | Pass criterion |
 |:---:|---|
-| 1 | 반환 shape `(T, N)` 두 개 |
+| 1 | Returns two tensors of shape `(T, N)` |
 | 2 | `returns == advantages + values` |
-| 3 | 검사기의 독립 구현과 값이 일치 |
-| 4 | **`λ=0` 이면 1-step TD 오차와 같다** |
-| 5 | **`γ=λ=1` 이면 몬테카를로와 같다** |
-| 6 | `done` 스텝에서 부트스트랩을 끊는다 |
-| 7 | `done` 이 실제로 결과를 바꾼다 |
-| 8 | 마지막 스텝이 `last_value` 를 쓴다 |
+| 3 | Values match the checker's independent implementation |
+| 4 | **With `λ=0` it equals the 1-step TD error** |
+| 5 | **With `γ=λ=1` it equals Monte Carlo** |
+| 6 | Cuts the bootstrap at `done` steps |
+| 7 | `done` actually changes the result |
+| 8 | The last step uses `last_value` |
 
-4·5 가 좋은 검사다 — GAE 는 두 극단의 보간이므로, 양 끝에서 알려진 식과 일치하면
-중간도 맞을 가능성이 높다. 6·7·8 은 흔한 실수를 직접 겨냥한다.
+4·5 are good checks — GAE interpolates between two extremes, so if it matches the known formulas at both ends,
+the middle is likely right too. 6·7·8 directly target common mistakes.
 
-## 다 하면
+## When you're done
 
-`python starter.py` 로 실제 학습이 돈다 (약 40초). 보상이 0.44 → 0.95 로 오르면 성공.
+`python starter.py` runs real training (about 40 s). Success if the reward rises from 0.44 → 0.95.

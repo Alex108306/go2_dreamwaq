@@ -228,12 +228,12 @@ class DreamWaQEnv(DirectRLEnv):
         # Observation scaling (legged_robot.py:416-421, 979) — applied BEFORE noise so the noise
         # magnitudes below (already in obs-scale units) are correct. gravity and actions use scale 1.0.
         # ── TODO(direct-obs-scale) ─ level L1 ─────────────────────────────
-        # 관측을 스케일링한다 — 각 그룹을 O(1) 로 맞춘다
-        #   hint: cfg 에 obs_scale_lin_vel / obs_scale_ang_vel / obs_scale_dof_pos / obs_scale_dof_vel 이 있다
-        #   hint: 네 줄이면 된다. 각 변수에 해당 스케일을 곱한다
-        #   hint: gravity 와 actions 는 이미 O(1) 이라 스케일하지 않는다 (원본도 1.0)
-        #   hint: 왜 필요한가: raw joint_vel 은 ±20 rad/s 인데 명령은 ±1 이다. 스케일하지 않으면 관절 속도가 관측을 지배해 정책이 명령을 무시한다
-        # 통과 기준은 이 실습 폴더의 README.md 를 본다.
+        # Scale the observations — bring each group to O(1)
+        #   hint: The cfg has obs_scale_lin_vel / obs_scale_ang_vel / obs_scale_dof_pos / obs_scale_dof_vel
+        #   hint: Four lines are enough. Multiply each variable by its scale
+        #   hint: gravity and actions are already O(1), so they aren't scaled (1.0 in the original too)
+        #   hint: Why it's needed: raw joint_vel is ±20 rad/s while the commands are ±1. Without scaling, joint velocity dominates the observation and the policy ignores the commands
+        # For the pass criteria, see README.md in this exercise folder.
         raise NotImplementedError("TODO(direct-obs-scale)")
         # ─────────────────────────────────────────────────────────────────────
 

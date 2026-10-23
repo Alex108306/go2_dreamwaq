@@ -1,9 +1,9 @@
-"""최소 PPO 구현 — Isaac Sim 없이 도는 독립 스크립트.  [Stage 3 solution]
+"""Minimal PPO implementation — a standalone script that runs without Isaac Sim.  [Stage 3 solution]
 
-rsl_rl 의 PPO 를 읽기 전에, 알고리즘의 뼈대를 직접 써 본다. 여기서 만든 조각들이
-`rsl_rl/algorithms/ppo.py` 의 어디에 대응하는지는 `task03_rsl_rl_map/` 에서 대조한다.
+Before reading rsl_rl's PPO, write the skeleton of the algorithm yourself. Where the pieces built here
+correspond to in `rsl_rl/algorithms/ppo.py` is compared in `task03_rsl_rl_map/`.
 
-    python ppo.py            # toy 환경에서 학습시켜 보상이 오르는지 확인
+    python ppo.py            # train on the toy environment and check that the reward rises
 """
 from __future__ import annotations
 
@@ -13,8 +13,8 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 
-# toy_env.py 는 stage3_ppo/ 에 있다. 이 파일은 거기(solution) 또는 taskNN/(starter)
-# 어느 쪽에서도 실행될 수 있으므로 두 곳을 다 찾는다.
+# toy_env.py lives in stage3_ppo/. This file can be run from either there (solution) or taskNN/ (starter),
+# so look in both places.
 _HERE = Path(__file__).resolve().parent
 for _cand in (_HERE, _HERE.parent):
     if (_cand / "toy_env.py").exists():
@@ -25,11 +25,11 @@ from toy_env import ACT_DIM, OBS_DIM, VelocityTrackingEnv, standing_still_reward
 
 
 class ActorCritic(nn.Module):
-    """DreamWaQ 와 같은 구조: actor 와 critic 이 파라미터를 공유하지 않는다.
+    """Same structure as DreamWaQ: actor and critic don't share parameters.
 
-    실제 프로젝트는 512-256-128 이지만 toy 문제라 64-64 로 줄였다.
-    액션 분포는 상태에 무관한 학습 가능한 log_std 를 갖는 가우시안 —
-    이것도 rsl_rl 및 DreamWaQ 와 같다.
+    The real project uses 512-256-128, but this is a toy problem so it's reduced to 64-64.
+    The action distribution is a Gaussian with a state-independent learnable log_std —
+    also the same as rsl_rl and DreamWaQ.
     """
 
     def __init__(self, obs_dim: int = OBS_DIM, act_dim: int = ACT_DIM, hidden: int = 64):
@@ -44,7 +44,7 @@ class ActorCritic(nn.Module):
             nn.Linear(hidden, hidden), nn.ELU(),
             nn.Linear(hidden, 1),
         )
-        # init_noise_std = 1.0 (rsl_rl 기본값이자 DreamWaQ 값)
+        # init_noise_std = 1.0 (rsl_rl default and the DreamWaQ value)
         self.log_std = nn.Parameter(torch.zeros(act_dim))
 
     def distribution(self, obs: torch.Tensor) -> torch.distributions.Normal:
@@ -71,15 +71,15 @@ def compute_gae(
     """Generalized Advantage Estimation.
 
     Args:
-        rewards: (T, N)  각 스텝의 보상
-        values:  (T, N)  critic 이 본 상태가치 V(s_t)
-        dones:   (T, N)  그 스텝에서 에피소드가 끝났으면 1.0
-        last_value: (N,) 마지막 관측의 V(s_T) — 잘린 롤아웃을 부트스트랩한다
-        gamma: 할인율
-        lam: GAE 람다. 0 이면 1-step TD, 1 이면 몬테카를로
+        rewards: (T, N)  reward at each step
+        values:  (T, N)  state value V(s_t) as seen by the critic
+        dones:   (T, N)  1.0 if the episode ended at that step
+        last_value: (N,) V(s_T) of the last observation — bootstraps the truncated rollout
+        gamma: discount factor
+        lam: GAE lambda. 0 gives 1-step TD, 1 gives Monte Carlo
 
     Returns:
-        (returns, advantages) 둘 다 (T, N)
+        (returns, advantages), both (T, N)
     """
     T = rewards.shape[0]
     advantages = torch.zeros_like(rewards)
@@ -107,28 +107,28 @@ def ppo_losses(
     value_loss_coef: float = 1.0,
     entropy_coef: float = 0.01,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    """PPO 의 세 손실 항과 총합.
+    """PPO's three loss terms and their total.
 
     Args:
-        log_prob:     (B,) 현재 정책이 그 액션에 준 log 확률
-        old_log_prob: (B,) 롤아웃을 모을 때의 정책이 준 log 확률 (상수)
-        advantages:   (B,) 정규화된 어드밴티지
-        value:        (B,) 현재 critic 의 예측
-        returns:      (B,) GAE 로 만든 회귀 타깃
-        entropy:      (B,) 현재 정책의 엔트로피
+        log_prob:     (B,) log probability the current policy gives that action
+        old_log_prob: (B,) log probability the policy gave when collecting the rollout (constant)
+        advantages:   (B,) normalized advantages
+        value:        (B,) current critic prediction
+        returns:      (B,) regression target built with GAE
+        entropy:      (B,) entropy of the current policy
 
     Returns:
         (total, surrogate_loss, value_loss, entropy_loss)
     """
     # ── TODO(ppo-losses) ─ level L2 ─────────────────────────────
-    # PPO 의 clipped surrogate / value / entropy 손실과 총합을 완성한다
-    #   hint: ratio = exp(log_prob - old_log_prob). 같은 정책이면 1 이 된다
-    #   hint: surrogate 는 -min(ratio * A, clip(ratio, 1-eps, 1+eps) * A) 의 평균이다 (최대화가 아니라 최소화)
-    #   hint: clip 은 ratio 에만 걸고 advantage 에는 걸지 않는다
-    #   hint: value_loss 는 (value - returns)^2 의 평균 (MSE)
-    #   hint: entropy 는 크게 만들고 싶으므로 손실에는 음수로 들어간다
+    # Complete PPO's clipped surrogate / value / entropy losses and their total
+    #   hint: ratio = exp(log_prob - old_log_prob). It is 1 for the same policy
+    #   hint: surrogate is the mean of -min(ratio * A, clip(ratio, 1-eps, 1+eps) * A) (minimized, not maximized)
+    #   hint: clip applies only to the ratio, not to the advantage
+    #   hint: value_loss is the mean of (value - returns)^2 (MSE)
+    #   hint: we want entropy to be large, so it enters the loss with a negative sign
     #   hint: total = surrogate + value_loss_coef * value_loss + entropy_coef * entropy_loss
-    # 통과 기준은 이 실습 폴더의 README.md 를 본다.
+    # For the pass criteria, see README.md in this exercise folder.
     raise NotImplementedError("TODO(ppo-losses)")
     # ─────────────────────────────────────────────────────────────────────
 
@@ -145,7 +145,7 @@ def train(
     device: str = "cpu",
     verbose: bool = True,
 ) -> tuple[ActorCritic, list[float]]:
-    """PPO 학습 루프. rsl_rl 의 OnPolicyRunner.learn() 과 같은 골격이다."""
+    """PPO training loop. Same skeleton as rsl_rl's OnPolicyRunner.learn()."""
     env = VelocityTrackingEnv(num_envs=num_envs, device=device)
     model = ActorCritic().to(device)
     optim = torch.optim.Adam(model.parameters(), lr=lr)
@@ -154,7 +154,7 @@ def train(
     history: list[float] = []
 
     for it in range(iterations):
-        # --- 1. 롤아웃 수집 (on-policy) ---
+        # --- 1. Collect rollouts (on-policy) ---
         buf_obs, buf_act, buf_logp, buf_rew, buf_done, buf_val = [], [], [], [], [], []
         for _ in range(steps_per_env):
             action, log_prob, value = model.act(obs)
@@ -170,17 +170,17 @@ def train(
         b_logp = torch.stack(buf_logp); b_rew = torch.stack(buf_rew)
         b_done = torch.stack(buf_done); b_val = torch.stack(buf_val)
 
-        # --- 2. 어드밴티지 ---
+        # --- 2. Advantages ---
         returns, advantages = compute_gae(b_rew, b_val, b_done, last_value)
 
-        # 평탄화 후 어드밴티지 정규화 (rsl_rl 과 동일)
+        # Normalize advantages after flattening (same as rsl_rl)
         flat = lambda x: x.reshape(-1, *x.shape[2:])  # noqa: E731
         f_obs, f_act = flat(b_obs), flat(b_act)
         f_logp, f_ret = flat(b_logp), flat(returns)
         f_adv = flat(advantages)
         f_adv = (f_adv - f_adv.mean()) / (f_adv.std() + 1e-8)
 
-        # --- 3. 여러 epoch 동안 미니배치 업데이트 ---
+        # --- 3. Minibatch updates over several epochs ---
         batch = f_obs.shape[0]
         for _ in range(epochs):
             perm = torch.randperm(batch, device=device)
@@ -199,15 +199,15 @@ def train(
         mean_reward = b_rew.mean().item()
         history.append(mean_reward)
         if verbose and (it % 20 == 0 or it == iterations - 1):
-            print(f"  iter {it:4d} | 평균 보상 {mean_reward:.4f} | std {model.log_std.exp().mean():.3f}")
+            print(f"  iter {it:4d} | mean reward {mean_reward:.4f} | std {model.log_std.exp().mean():.3f}")
 
     return model, history
 
 
 if __name__ == "__main__":
     baseline = standing_still_reward()
-    print(f"정지 시 보상(하한선) : {baseline:.4f}\n")
+    print(f"Standing-still reward (floor) : {baseline:.4f}\n")
     _, history = train()
     final = sum(history[-10:]) / 10
-    print(f"\n최종 평균 보상 : {final:.4f}  (하한선 {baseline:.4f}, 완벽 추종 1.0)")
-    print("학습 성공" if final > baseline + 0.2 else "학습 실패 — 하한선을 못 넘었다")
+    print(f"\nFinal mean reward : {final:.4f}  (floor {baseline:.4f}, perfect tracking 1.0)")
+    print("Training succeeded" if final > baseline + 0.2 else "Training failed — didn't beat the floor")

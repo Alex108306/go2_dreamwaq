@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""빠른 검증 — direct-obs-scale.  (Isaac Sim 불필요, ~2초)
+"""Fast check — direct-obs-scale.  (no Isaac Sim needed, ~2 s)
 
-`DreamWaQEnv._get_observations` 를 가짜 `self` 로 직접 호출한다. 실제 env 를
-띄우지 않고 메서드 하나만 떼어 검사하는 방식이다.
+Calls `DreamWaQEnv._get_observations` directly with a fake `self`. It checks a single method
+in isolation without launching a real env.
 
     python check.py                 # starter/dreamwaq_env.py
-    python check.py --solution      # 완성본
+    python check.py --solution      # finished version
 """
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ SOLUTION = (
 STARTER = HERE / "starter" / "dreamwaq_env.py"
 
 N, J = 4, 12
-# 프로젝트 기본값 (dreamwaq_env_cfg.py)
+# Project defaults (dreamwaq_env_cfg.py)
 S_LIN, S_ANG, S_POS, S_VEL = 2.0, 0.25, 1.0, 0.05
 
 
@@ -41,13 +41,13 @@ class Cfg:
     obs_scale_ang_vel = S_ANG
     obs_scale_dof_pos = S_POS
     obs_scale_dof_vel = S_VEL
-    obs_noise = False       # 노이즈를 끄면 결정론적으로 검사할 수 있다
+    obs_noise = False       # turning noise off allows deterministic checking
     system_delay = False
     include_lin_vel_in_obs = False
 
 
 class FakeSelf:
-    """_get_observations 가 만지는 것만 갖춘 최소 객체."""
+    """Minimal object with only what _get_observations touches."""
 
     def __init__(self, lin, ang, grav, jpos, jvel, jdef, cmd, act):
         data = type("D", (), {
@@ -60,14 +60,14 @@ class FakeSelf:
         self._actions = act
         self._true_lin_vel_b = torch.zeros_like(lin)
         self._obs_history_buf = torch.zeros(N, 5, 45)
-        # critic(privileged) 관측용 — height scanner 와 push 임펄스
+        # For the critic (privileged) observation — height scanner and push impulse
         hs = type("HD", (), {
             "pos_w": torch.zeros(N, 3),
             "ray_hits_w": torch.zeros(N, NUM_RAYS, 3),
         })()
         self._height_scanner = type("HS", (), {"data": hs})()
         self._disturb_force = torch.zeros(N, 3)
-        self._command_vis = None      # GUI 마커 (headless 검사에서는 없음)
+        self._command_vis = None      # GUI markers (absent in headless checks)
         self._heading_vis = None
         self.num_envs, self.device = N, "cpu"
 
@@ -91,7 +91,7 @@ def main() -> int:
     args = ap.parse_args()
 
     path = SOLUTION if args.solution else STARTER
-    print(f"검사 대상: {path.relative_to(REPO_ROOT)}\n")
+    print(f"Checking: {path.relative_to(REPO_ROOT)}\n")
     get_obs = load_module(path, extra_paths=(SOLUTION.parent,)).DreamWaQEnv._get_observations
 
     failures: list[str] = []
@@ -109,59 +109,59 @@ def main() -> int:
     try:
         obs = policy_of(make())
     except NotImplementedError:
-        print("  아직 TODO(direct-obs-scale) 가 비어 있다. starter/dreamwaq_env.py 를 채운다.")
+        print("  TODO(direct-obs-scale) is still empty. Fill in starter/dreamwaq_env.py.")
         return 1
 
-    check("1. 관측이 45차원 (Base/Waq)", obs.shape == (N, 45), f"shape={tuple(obs.shape)}")
+    check("1. observation is 45-dimensional (Base/Waq)", obs.shape == (N, 45), f"shape={tuple(obs.shape)}")
 
-    # 관측 배치: ang_vel(3) gravity(3) commands(3) joint_pos(12) joint_vel(12) actions(12)
+    # Observation layout: ang_vel(3) gravity(3) commands(3) joint_pos(12) joint_vel(12) actions(12)
     ANG, GRAV, CMD, JPOS, JVEL = slice(0, 3), slice(3, 6), slice(6, 9), slice(9, 21), slice(21, 33)
 
     obs = policy_of(make(ang_v=4.0))
-    check("2. ang_vel 에 obs_scale_ang_vel(0.25) 적용",
+    check("2. obs_scale_ang_vel (0.25) applied to ang_vel",
           torch.allclose(obs[:, ANG], torch.full((N, 3), 4.0 * S_ANG), atol=1e-6),
-          f"{obs[0, ANG].tolist()} (기대 {4.0 * S_ANG})")
+          f"{obs[0, ANG].tolist()} (expected {4.0 * S_ANG})")
 
     obs = policy_of(make(jvel_v=20.0))
-    check("3. joint_vel 에 obs_scale_dof_vel(0.05) 적용",
+    check("3. obs_scale_dof_vel (0.05) applied to joint_vel",
           torch.allclose(obs[:, JVEL], torch.full((N, J), 20.0 * S_VEL), atol=1e-6),
-          f"{obs[0, JVEL][0].item():.4f} (기대 {20.0 * S_VEL})")
+          f"{obs[0, JVEL][0].item():.4f} (expected {20.0 * S_VEL})")
 
     obs = policy_of(make(jpos_v=0.5))
-    check("4. joint_pos 에 obs_scale_dof_pos(1.0) 적용",
+    check("4. obs_scale_dof_pos (1.0) applied to joint_pos",
           torch.allclose(obs[:, JPOS], torch.full((N, J), 0.5 * S_POS), atol=1e-6),
           f"{obs[0, JPOS][0].item():.4f}")
 
-    # gravity 는 스케일하지 않는다 (원본도 1.0)
+    # gravity is not scaled (1.0 in the original too)
     s = make()
     s._robot.data.projected_gravity_b = torch.full((N, 3), -1.0)
     obs = policy_of(s)
-    check("5. gravity 는 스케일하지 않는다", torch.allclose(obs[:, GRAV], torch.full((N, 3), -1.0), atol=1e-6),
+    check("5. gravity is not scaled", torch.allclose(obs[:, GRAV], torch.full((N, 3), -1.0), atol=1e-6),
           f"{obs[0, GRAV].tolist()}")
 
-    # true_lin_vel 은 스케일 '전' 값이어야 한다 — CENet 의 학습 타깃이므로 중요하다
+    # true_lin_vel must be the value 'before' scaling — important since it's CENet's training target
     s = make(lin_v=3.0)
     policy_of(s)
-    check("6. _true_lin_vel_b 는 스케일 전 원값을 보관한다",
+    check("6. _true_lin_vel_b keeps the raw value from before scaling",
           torch.allclose(s._true_lin_vel_b, torch.full((N, 3), 3.0), atol=1e-6),
-          f"{s._true_lin_vel_b[0].tolist()} — 스케일 후 값을 저장하면 CENet 타깃이 틀어진다")
+          f"{s._true_lin_vel_b[0].tolist()} — storing the scaled value corrupts CENet's target")
 
-    # --- 핵심: 스케일링이 없으면 무슨 일이 벌어지는가 ---
-    # 실제 로봇 규모: joint_vel ~ ±20 rad/s, 명령 ~ ±1
+    # --- Key: what happens without scaling ---
+    # Real robot scale: joint_vel ~ ±20 rad/s, commands ~ ±1
     s = make(jvel_v=20.0)
     s._commands = torch.ones(N, 4)
     obs = policy_of(s)
     jvel_mag = obs[:, JVEL].abs().mean().item()
     cmd_mag = obs[:, CMD].abs().mean().item()
-    check("7. 스케일 후 joint_vel 이 명령을 압도하지 않는다 (비 < 3)",
+    check("7. after scaling, joint_vel doesn't overwhelm the commands (ratio < 3)",
           jvel_mag / max(cmd_mag, 1e-9) < 3.0,
-          f"joint_vel/명령 = {jvel_mag / max(cmd_mag, 1e-9):.1f}배 — 스케일을 빠뜨리면 20배가 된다")
+          f"joint_vel/commands = {jvel_mag / max(cmd_mag, 1e-9):.1f}x — forgetting the scale makes it 20x")
 
     print()
     if failures:
-        print(f"\033[1;31m{len(failures)}개 실패\033[0m: {', '.join(failures)}")
+        print(f"\033[1;31m{len(failures)} failed\033[0m: {', '.join(failures)}")
         return 1
-    print("\033[1;32m전부 통과.\033[0m")
+    print("\033[1;32mAll passed.\033[0m")
     return 0
 
 

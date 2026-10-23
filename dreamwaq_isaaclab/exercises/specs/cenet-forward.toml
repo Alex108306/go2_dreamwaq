@@ -1,30 +1,30 @@
 id = "cenet-forward"
-# L2 다. 시그니처·docstring·검사기가 주어지고 본문을 쓴다 (exercises/README.md 의 레벨 표).
-# L3("요구사항만 주고 파일을 통째로 쓴다")로 올릴 수 없는 구조적 이유가 있다: 검사기가
-# 조각의 순서·폭·반환 순서를 자리까지 대조하므로 그 규약을 README 에 적어야 하고,
-# 적는 순간 설계는 주어진 것이 된다. 프로덕션 소스를 잘라 만든 실습의 상한이다.
+# This is L2. The signature, docstring and checker are given and you write the body (level table in exercises/README.md).
+# There is a structural reason it can't be raised to L3 ("only requirements given, write the whole file"): the checker
+# compares the order, widths and return order of the pieces exactly, so that contract has to be written in the README,
+# and the moment it is written the design becomes given. This is the ceiling for exercises cut from production source.
 level = 2
 stage = "stage4_cenet"
 source = "dreamwaq_manager/source/dreamwaq_manager/dreamwaq_manager/algorithms/cenet.py"
-task = "CENet 의 forward 본문을 쓴다 — 인코더 출력을 세 조각으로 가르고, 재매개변수화를 거쳐 디코더에 넣는다"
+task = "Write CENet's forward body — split the encoder output into three pieces, reparameterize, and feed the decoder"
 
-# 인라인 힌트를 전부 펼쳐 두면 "안 보고 해 본다"를 고를 수 없어진다 — 첫 줄만 남기고
-# 나머지는 README 의 접힌 <details> 로 미룬다.
+# If all inline hints are expanded, you lose the option to "try without looking" — keep only the first line and
+# defer the rest to the README's folded <details>.
 inline_hints = 1
 
-# 같은 cenet.py 안의 update() 는 다음 실습(cenet-loss)의 답이다. 여기서도 비워야 미리 읽히지
-# 않는다. cenet-forward/check.py 는 forward() 만 부르므로 채점에는 영향이 없다.
+# update() in the same cenet.py is the answer to the next exercise (cenet-loss). It must be blanked here too so it isn't
+# read ahead of time. cenet-forward/check.py only calls forward(), so grading is unaffected.
 also_blank = ["cenet-loss"]
 
 hints = [
-    "인코더는 세 가지를 한 텐서로 뱉는다 — 속도 추정 하나와 context 분포의 파라미터 두 벌. 고정된 것은 속도의 차원 수뿐이고, 나머지 폭은 latent_dim1/latent_dim2 상수가 아니라 h 의 마지막 축 크기에서 재야 한다 (cfg 가 context 크기를 바꿔도 따라가야 하기 때문이다)",
-    "분포 파라미터를 두 벌로 가르려면 그 개수가 짝수여야 한다. 홀수면 cfg 가 잘못된 것이니 조용히 넘기지 말고 AssertionError 를 낸다",
-    "디코더가 받는 폭은 latent_dim2 다. 무엇과 무엇을 이어야 그 수가 나오는지, 그리고 그 중 잠재 부분이 분포의 평균인지 거기서 뽑은 표본인지 생각한다 (self.reparameterize 는 이미 구현되어 있다)",
-    "반환은 (est_next_obs, est_vel, mu, logvar, context_vec) 순서다 — update() 와 before_action() 이 이 순서로 받는다",
+    "The encoder emits three things in one tensor — one velocity estimate and two sets of context-distribution parameters. Only the velocity's dimension count is fixed; the remaining widths must be measured from the size of h's last axis, not from the latent_dim1/latent_dim2 constants (because it must follow along if the cfg changes the context size)",
+    "To split the distribution parameters into two sets, their count must be even. If it is odd the cfg is wrong, so don't pass silently — raise an AssertionError",
+    "The width the decoder receives is latent_dim2. Think about what must be concatenated with what to get that number, and whether the latent part is the distribution's mean or a sample drawn from it (self.reparameterize is already implemented)",
+    "Return in the order (est_next_obs, est_vel, mu, logvar, context_vec) — update() and before_action() receive them in this order",
 ]
 
-# 원본에서 그대로 잘라낼 구간. 소스가 바뀌면 생성기가 "찾지 못했다"고 실패하므로
-# 조용히 어긋나는 일은 없다. 그때는 이 body 를 현재 코드로 갱신한다.
+# The section to cut out verbatim from the original. If the source changes, the generator fails with "not found",
+# so it never silently drifts. When that happens, update this body to the current code.
 body = """        h = self.encoder(obs_history)
         est_vel, context_vec_params = h.split([3, h.size(-1) - 3], dim=-1)
 
@@ -41,20 +41,20 @@ body = """        h = self.encoder(obs_history)
         return self.decoder(latent), est_vel, mu, logvar, context_vec
 """
 
-# --- 코드를 지워도 산문이 답을 말한다 -------------------------------------------------
-# 클래스 docstring 세 줄은 forward 의 데이터 흐름 전체를, __init__ 의 두 주석은 3/16/16 분할을
-# 그대로 준다. TODO 바로 위 25줄 안이라 코드를 비운 의미가 없어진다.
-# (프로덕션 소스는 그대로 두고 생성 시점에만 가린다.)
+# --- Even with the code removed, the prose gives the answer away -------------------------------------------------
+# The three-line class docstring gives the entire data flow of forward, and the two comments in __init__ give the 3/16/16 split
+# verbatim. They are within 25 lines right above the TODO, so blanking the code would be pointless.
+# (The production source is left as-is; they are hidden only at generation time.)
 
 [[also_mask]]
 find = """    Encoder: obs_history(225) → est_vel(3) + mu(16) + logvar(16) = 35
     Reparameterize: mu, logvar → context_vec(16)
     Decoder: est_vel(3) + context_vec(16) = 19 → est_next_obs(45)"""
-replace = "    구조는 이 실습에서 직접 세운다 — 자세한 것은 이 실습 폴더의 README.md 를 본다."
+replace = "    You build the structure yourself in this exercise — for details see README.md in this exercise folder."
 
-# 실험용 게이트 클래스(_DecoderVelGate)는 "디코더 입력 = [est_vel(3), context]" 를 그대로
-# 말해 준다 — 이 실습이 스스로 세워야 하는 구조다. 기본 설정에서는 삽입조차 되지 않으므로
-# 생성 시점에 통째로 가린다 (프로덕션 소스는 그대로).
+# The experiment gate class (_DecoderVelGate) spells out "decoder input = [est_vel(3), context]" —
+# exactly the structure this exercise asks you to build yourself. With the default settings it isn't even inserted, so
+# it is hidden wholesale at generation time (the production source stays as-is).
 [[also_mask]]
 find = """class _DecoderVelGate(nn.Module):
     \"\"\"Structural ablation on the decoder's velocity input. **Default: not inserted.**
@@ -91,12 +91,12 @@ find = """class _DecoderVelGate(nn.Module):
 
 
 class CenetRolloutStorage:"""
-# 클래스를 통째로 지운다 — 삽입 지점(decoder_layers.insert)도 아래에서 가려서, 남겨 두면
-# 아무 데서도 인스턴스화되지 않는 빈 껍데기가 된다.
+# Delete the class wholesale — the insertion point (decoder_layers.insert) is also masked below, so if left in
+# it would be an empty shell that is never instantiated anywhere.
 replace = """class CenetRolloutStorage:"""
 
-# 진단용 가중치 노름 함수도 "디코더 입력 = 속도 3 + 잠재 16" 을 그대로 말한다.
-# 채점에 쓰이지 않으므로 동작하는 더미로 바꾼다.
+# The diagnostic weight-norm function also spells out "decoder input = 3 velocity + 16 latent".
+# It isn't used for grading, so replace it with a working dummy.
 [[also_mask]]
 find = """        \"\"\"(|W_vel|, |W_z|) of the decoder's FIRST Linear, as a mean column norm per input dim.
 
@@ -111,15 +111,15 @@ find = """        \"\"\"(|W_vel|, |W_z|) of the decoder's FIRST Linear, as a mea
         with torch.no_grad():
             col_norms = first_linear.weight.norm(dim=0)  # [latent_dim2]
             return float(col_norms[:3].mean().item()), float(col_norms[3:].mean().item())"""
-replace = """        \"\"\"디코더 1층 가중치 진단 — 이 실습에서는 쓰지 않는다 (프로덕션 소스를 본다).\"\"\"
+replace = """        \"\"\"Decoder first-layer weight diagnostic — not used in this exercise (see the production source).\"\"\"
         return 0.0, 0.0"""
 
-# `self.decoder_vel_mode` 자체가 아래 게이트 마스크에서 사라지므로 참조도 함께 없앤다.
+# `self.decoder_vel_mode` itself disappears in the gate mask below, so remove its reference as well.
 [[also_mask]]
 find = """        if self.decoder_vel_mode != "keep":
             # num_vel=3 matches forward()'s `h.split([3, ...])`.
             decoder_layers.insert(0, _DecoderVelGate(self.decoder_vel_mode, num_vel=3))"""
-replace = """        # (실험용 디코더 게이트 삽입 지점 — 이 실습에서는 걷어냈다.)"""
+replace = """        # (Insertion point of the experimental decoder gate — stripped in this exercise.)"""
 
 [[also_mask]]
 find = "        latent_dim1=35,  # 3 + 16*2"
@@ -129,12 +129,12 @@ replace = "        latent_dim1=35,"
 find = "        latent_dim2=19,  # 3 + 16"
 replace = "        latent_dim2=19,"
 
-# --- 실험용 게이트를 실습 본문에서 가린다 ---------------------------------------------
-# 프로덕션 cenet.py 의 DWQ_CENET_* 환경변수 게이트(커밋 c46b64f)는 전부 기본 off 인 실험용
-# 스위치이고 이 실습과 아무 관계가 없다. 55줄짜리 게이트 주석이 TODO 바로 위에 있으면 읽을
-# 것과 안 읽어도 될 것이 뒤섞인다. _kl_per_dim() / _kl_term_gated() 는 한 술 더 떠서 다음
-# 실습(cenet-loss)의 답이므로, also_blank 로 본문을 비우는 것과 같은 이유로 함께 가린다.
-# 프로덕션 소스는 건드리지 않고 생성 시점에만 가린다.
+# --- Hide the experiment gates from the exercise body ---------------------------------------------
+# The DWQ_CENET_* env-var gates in the production cenet.py (commit c46b64f) are experiment switches, all off
+# by default, and have nothing to do with this exercise. A 55-line gate comment right above the TODO mixes what to read
+# with what you don't need to read. _kl_per_dim() / _kl_term_gated() go one step further and are the answer to the next
+# exercise (cenet-loss), so they are hidden for the same reason as blanking bodies with also_blank.
+# The production source is left untouched; they are hidden only at generation time.
 
 [[also_mask]]
 find = """        # --- experiment gates (env vars) ----------------------------------------------------
@@ -228,14 +228,14 @@ find = """        # --- experiment gates (env vars) ----------------------------
             raise ValueError(f"DWQ_CENET_DEC_VEL must be keep|zero|detach, got {self.decoder_vel_mode!r}")
         # A latent dim counts as "alive" above this per-dim KL (nats). Only a diagnostic.
         self.kl_active_eps = 0.01"""
-replace = """        # 실험용 환경변수 게이트(DWQ_CENET_*)는 이 실습을 만들 때 걷어냈다 — 전부 기본 off 라
-        # 학습이 쓰는 수식은 달라지지 않는다. 게이트가 읽던 값들(free_bits / kl_reduction /
-        # beta_anneal / beta_limit)도 같이 지웠다: 이 실습에서는 아무도 읽지 않는데 남겨 두면
-        # 무엇이 실제로 쓰이는 설정인지가 흐려진다.
-        # 왜 그런 스위치가 프로덕션 소스에 있는지는 다음 실습(cenet-loss)의 README.md 를 본다.
-        self.grad_clip = 1.0  # 이 파일에서 실제로 읽히는 유일한 설정값 — PPO 의 max_grad_norm 과 같은 예산
-        # 진단 주석이 가리키는 문턱값(차원당 KL 이 이 위면 '살아 있는' 잠재 차원).
-        # 진단 계산 자체를 아래에서 걷어냈으므로 이 실습에서는 읽는 곳이 없다.
+replace = """        # The experiment env-var gates (DWQ_CENET_*) were stripped when making this exercise — all are off by default, so
+        # the formulas used in training don't change. The values the gates read (free_bits / kl_reduction /
+        # beta_anneal / beta_limit) were removed too: nobody reads them in this exercise, and leaving them in
+        # would blur which settings are actually used.
+        # For why such switches exist in the production source, see README.md of the next exercise (cenet-loss).
+        self.grad_clip = 1.0  # The only setting actually read in this file — same budget as PPO's max_grad_norm
+        # The threshold the diagnostic comment refers to (a latent dim is 'alive' if its per-dim KL is above this).
+        # The diagnostic computation itself was stripped below, so nothing reads it in this exercise.
         self.kl_active_eps = 0.01"""
 
 [[also_mask]]
@@ -252,7 +252,7 @@ find = """        _non_default = (
                 f"min_lr={min_lr} epochs={num_learning_epochs}x{num_mini_batches} "
                 f"dec_vel={self.decoder_vel_mode}"
             )"""
-replace = """        # (게이트 설정 진단 출력은 이 실습에서 걷어냈다.)"""
+replace = """        # (Gate-setting diagnostic output was stripped in this exercise.)"""
 
 [[also_mask]]
 find = """        # Paper eq.7 puts a weight `beta` on the KL term but gives NEITHER a numeric value NOR a
@@ -298,9 +298,9 @@ find = """    @staticmethod
         kl_per_dim = torch.clamp(self._kl_per_dim(mu, logvar), min=self.free_bits)
         kl = kl_per_dim.sum() if self.kl_reduction == "sum" else kl_per_dim.mean()
         return kl.reshape(1) * self.beta"""
-replace = """    # (잠재 차원별 KL 진단 도우미와 게이트용 KL 항은 이 실습에서 걷어냈다 —
-    #  둘 다 다음 실습(cenet-loss)에서 채울 KL 식을 그대로 담고 있어서 답안지가 된다.
-    #  여기서 채우는 것은 forward() 지 KL 이 아니다.)"""
+replace = """    # (The per-latent-dim KL diagnostic helper and the gated KL term were stripped in this exercise —
+    #  both contain exactly the KL formula you will fill in in the next exercise (cenet-loss), so they would be an answer key.
+    #  What you fill in here is forward(), not the KL.)"""
 
 [[also_mask]]
 find = """            # Probe gates (OFF by default -> this block never runs and the numbers above are
@@ -310,12 +310,12 @@ find = """            # Probe gates (OFF by default -> this block never runs and
             if self.free_bits > 0.0 or self.kl_reduction != "mean":
                 kl_loss = self._kl_term_gated(mu_batch, logvar_batch)
                 total_loss = vel_loss + recon_loss + kl_loss"""
-replace = """            # (실험용 게이트 오버라이드는 이 실습에서 걷어냈다.)"""
+replace = """            # (The experimental gate override was stripped in this exercise.)"""
 
 [[also_mask]]
 find = """            # Default 1.0 (same budget PPO uses); None only via DWQ_CENET_GRAD_CLIP=0 or the
             # DWQ_CENET_REFERENCE preset, where there is no clipping at all."""
-replace = """            # PPO 와 같은 예산(1.0)으로 CENet gradient 도 자른다."""
+replace = """            # Clip the CENet gradient with the same budget as PPO (1.0)."""
 
 [[also_mask]]
 find = """            with torch.no_grad():
@@ -327,8 +327,8 @@ find = """            with torch.no_grad():
 replace = """            with torch.no_grad():
                 mean_mu_abs += mu_batch.abs().mean().item()
                 mean_sigma += (0.5 * logvar_batch).exp().mean().item()
-                # 잠재 차원별 KL 진단(kl_active_dims / kl_nats)은 이 실습에서 걷어냈다 —
-                # 그 계산이 곧 다음 실습(cenet-loss)의 답이기 때문이다. 프로덕션 소스에는 있다."""
+                # The per-latent-dim KL diagnostic (kl_active_dims / kl_nats) was stripped in this exercise —
+                # that computation is exactly the answer to the next exercise (cenet-loss). It exists in the production source."""
 
 [[also_mask]]
 find = """        # beta annealing (IsaacGym-original behaviour, off by default): applied AFTER the losses of this
@@ -336,8 +336,8 @@ find = """        # beta annealing (IsaacGym-original behaviour, off by default)
         # ~139 updates. The runner checkpoints `cenet_beta`, so a resumed run keeps its place.
         if self.beta_anneal:
             self.beta = min(self.beta * self.beta_anneal_rate, self.beta_limit)"""
-replace = """        # (β annealing 은 실험용 게이트라 이 실습에서 걷어냈다. 논문 eq.7 은 β 에 스케줄을
-        #  주지 않는데, "그러니 상수" 는 논문 문장이 아니라 우리 독법이다 — README 를 본다.)"""
+replace = """        # (β annealing is an experiment gate, so it was stripped in this exercise. Paper eq.7 gives β no schedule,
+        #  and "therefore constant" is our reading, not a sentence from the paper — see the README.)"""
 
 [[also_mask]]
 find = """import os

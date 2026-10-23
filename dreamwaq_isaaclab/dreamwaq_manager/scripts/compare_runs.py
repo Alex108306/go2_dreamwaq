@@ -1,32 +1,32 @@
 #!/usr/bin/env python3
-"""Base / Waq / Oracle 비교 그림과 요약표를 만든다 (flat + rough).
+"""Build Base / Waq / Oracle comparison figures and summary table (flat + rough).
 
-rsl_rl 이 남긴 tensorboard event 파일을 읽어 강의용 산출물을 만든다.
+Reads the tensorboard event files left by rsl_rl and produces course deliverables.
 
-    figures/curves_flat.png          속도추종 곡선 (3종)
-    figures/curves_rough.png         속도추종 곡선 (3종)
-    figures/reward_{flat,rough}.png  총 에피소드 보상 곡선
-    figures/terrain_level_rough.png  지형 커리큘럼 진행
-    figures/bar_final.png            최종 속도추종 막대
-    figures/summary.csv              최종값 + Waq-Base / Oracle-Waq
+    figures/curves_flat.png          velocity-tracking curves (3 variants)
+    figures/curves_rough.png         velocity-tracking curves (3 variants)
+    figures/reward_{flat,rough}.png  total episode reward curves
+    figures/terrain_level_rough.png  terrain curriculum progress
+    figures/bar_final.png            final velocity-tracking bars
+    figures/summary.csv              final values + Waq-Base / Oracle-Waq
 
-핵심 지표 `underlying` 은 보상 로그를 가중치로 되돌린 값이다.
+The key metric `underlying` is the reward log with the weight divided back out.
 
     underlying = (Episode_Reward/track_lin_vel_xy_exp) / 1.5
-               = mean exp(-||v_cmd - v||^2 / 0.25)   in [0, 1]   (1.0 = 완벽 추종)
+               = mean exp(-||v_cmd - v||^2 / 0.25)   in [0, 1]   (1.0 = perfect tracking)
 
-가중치를 나눠 주지 않으면 보상 설계가 바뀔 때 값이 같이 흔들려 비교가 안 된다.
+Without dividing out the weight, the value shifts whenever the reward design changes, making comparison impossible.
 
-강의의 결론 두 줄이 여기서 나온다.
+The two-line conclusion of the course comes from here.
 
-    Waq - Base    = CENet 의 순수 기여   (같은 env, actor 관측만 다르다)
-    Oracle - Waq  = 남은 격차            (추정이 진짜 특권정보에 얼마나 못 미치는가)
+    Waq - Base    = pure contribution of CENet   (same env, only the actor observation differs)
+    Oracle - Waq  = remaining gap                (how far the estimate falls short of true privileged info)
 
-Isaac Lab 번들 python 으로 돌린다 (tensorboard 가 필요하다):
+Run with Isaac Lab's bundled python (tensorboard is required):
 
     cd dreamwaq_manager && ~/IsaacLab/_isaac_sim/python.sh scripts/compare_runs.py
 
-아직 학습하지 않은 run 은 경고만 내고 건너뛰므로, 학습 도중에도 돌려 볼 수 있다.
+Runs not yet trained only produce a warning and are skipped, so you can run this mid-training.
 """
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ from tensorboard.backend.event_processing import event_accumulator  # noqa: E402
 
 
 def _use_korean_font() -> None:
-    """제목에 한글을 쓰므로 CJK 폰트를 찾아 쓴다. 없으면 조용히 기본 폰트로 둔다."""
+    """Titles use Korean, so look for a CJK font. If none is found, quietly keep the default font."""
     import matplotlib.font_manager as fm
 
     have = {f.name for f in fm.fontManager.ttflist}
@@ -51,7 +51,7 @@ def _use_korean_font() -> None:
         if name in have:
             plt.rcParams["font.family"] = [name, "DejaVu Sans"]
             break
-    plt.rcParams["axes.unicode_minus"] = False  # 한글 폰트는 유니코드 마이너스가 깨진다
+    plt.rcParams["axes.unicode_minus"] = False  # Korean fonts break the Unicode minus sign
 
 
 _use_korean_font()
@@ -59,14 +59,14 @@ _use_korean_font()
 TRACK_TAG = "Episode_Reward/track_lin_vel_xy_exp"
 TERRAIN_TAG = "Curriculum/terrain_levels"
 REWARD_TAG = "Train/mean_reward"
-TRACK_WEIGHT = 1.5  # 공식 Go2 레시피(IsaacLab UnitreeGo2RoughEnvCfg)의 track_lin_vel_xy_exp 가중치.
-                   # DreamWaQ 레시피(velocity_env_cfg.py)의 track_lin_vel_xy 는 1.0 이다 — 다른 항이다.
+TRACK_WEIGHT = 1.5  # track_lin_vel_xy_exp weight of the official Go2 recipe (IsaacLab UnitreeGo2RoughEnvCfg).
+                   # The DreamWaQ recipe's (velocity_env_cfg.py) track_lin_vel_xy is 1.0 — a different term.
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_LOGDIR = REPO_ROOT / "dreamwaq_manager" / "logs" / "rsl_rl"
 DEFAULT_OUTDIR = REPO_ROOT / "figures"
 
-# 순서 = 하한 -> 상한. Waq 를 가운데 두어야 두 델타가 눈에 들어온다.
+# Order = lower bound -> upper bound. Waq must be in the middle so both deltas are visible.
 CONFIGS = ["Base", "Waq", "Oracle"]
 COLORS = {"Base": "#888888", "Waq": "#1f77b4", "Oracle": "#2ca02c"}
 OBS_DIM = {"Base": 45, "Waq": 64, "Oracle": 48}
@@ -106,7 +106,7 @@ def load_scalar(ev: Path, tag: str) -> tuple[list[int], list[float]]:
 
 
 def smooth(ys: list[float], n: int) -> list[float]:
-    """이동평균. 곡선이 튀어서 3종 비교가 안 보이는 것을 막는다."""
+    """Moving average. Prevents noisy curves from obscuring the 3-way comparison."""
     if n <= 1 or len(ys) < n:
         return ys
     out: list[float] = []
@@ -118,19 +118,19 @@ def smooth(ys: list[float], n: int) -> list[float]:
 
 
 def tail_window(n_points: int, last_k: int | None) -> int:
-    """평균낼 꼬리 길이. 기본은 런의 마지막 10% (최소 50 포인트)."""
+    """Tail length to average over. Default is the last 10% of the run (minimum 50 points)."""
     if last_k is not None:
         return max(1, last_k)
     return max(50, n_points // 10)
 
 
 def final_value(ys: list[float], last_k: int | None = None) -> float | None:
-    """수렴 구간의 평균.
+    """Mean over the converged section.
 
-    이 지표는 iteration 마다 sd ~0.03 으로 출렁인다. 마지막 몇 점만 평균내면
-    표준오차가 재려는 차이(~0.02)보다 커져서 **부호가 뒤집힌다.**
-    실제로 last-3 은 Waq-Base=+0.04, last-100 은 -0.02 가 나온다.
-    그래서 기본값을 런의 마지막 10% 로 둔다.
+    This metric fluctuates with sd ~0.03 per iteration. Averaging only the last few points
+    makes the standard error larger than the difference being measured (~0.02), so **the sign flips.**
+    In practice last-3 gives Waq-Base=+0.04 while last-100 gives -0.02.
+    So the default is the last 10% of the run.
     """
     if not ys:
         return None
@@ -139,7 +139,7 @@ def final_value(ys: list[float], last_k: int | None = None) -> float | None:
 
 
 def final_stats(ys: list[float], last_k: int | None = None) -> tuple[float, float, int] | None:
-    """(평균, 평균의 표준오차, 사용한 포인트 수). 차이가 노이즈인지 판단하는 데 쓴다."""
+    """(mean, standard error of the mean, number of points used). Used to judge whether a difference is noise."""
     if not ys:
         return None
     n = tail_window(len(ys), last_k)
@@ -159,11 +159,11 @@ def plot_curves(logdir: Path, terrain: str, outdir: Path, smooth_n: int,
     for cfg in CONFIGS:
         ev = latest_event_file(logdir, EXPERIMENTS[terrain][cfg])
         if ev is None:
-            print(f"[warn] {terrain}/{cfg}: run 이 없다 ({EXPERIMENTS[terrain][cfg]}) — 건너뜀")
+            print(f"[warn] {terrain}/{cfg}: no run found ({EXPERIMENTS[terrain][cfg]}) — skipping")
             continue
         steps, vals = load_scalar(ev, TRACK_TAG)
         if not steps:
-            print(f"[warn] {terrain}/{cfg}: 태그 {TRACK_TAG} 없음 — 건너뜀")
+            print(f"[warn] {terrain}/{cfg}: tag {TRACK_TAG} missing — skipping")
             continue
         under = [v / TRACK_WEIGHT for v in vals]
         fv = final_value(under, last_k)
@@ -175,9 +175,9 @@ def plot_curves(logdir: Path, terrain: str, outdir: Path, smooth_n: int,
                 stats_out[cfg] = s
         plt.plot(steps, smooth(under, smooth_n), color=COLORS[cfg], lw=1.8,
                  label=f"{cfg} (obs {OBS_DIM[cfg]})  final={fv:.3f}")
-    if not finals:  # 학습 전이면 빈 그림을 남기지 않는다
+    if not finals:  # Don't leave an empty figure before training
         plt.close(fig)
-        print(f"[warn] curves_{terrain}: 데이터 없음 — 건너뜀")
+        print(f"[warn] curves_{terrain}: no data — skipping")
         return finals
     plt.axhline(1.0, color="k", ls=":", lw=0.8, alpha=0.5)
     plt.xlabel("iteration")
@@ -209,11 +209,11 @@ def plot_reward_curves(logdir: Path, terrain: str, outdir: Path, smooth_n: int) 
                  label=f"{cfg} (obs {OBS_DIM[cfg]})  final={final_value(vals):.2f}")
     if not any_data:
         plt.close()
-        print(f"[warn] reward_{terrain}: 데이터 없음 — 건너뜀")
+        print(f"[warn] reward_{terrain}: no data — skipping")
         return
     plt.xlabel("iteration")
     plt.ylabel("mean episode reward (sum)")
-    plt.title(f"PPO {terrain.capitalize()} — 총 보상: Base vs Waq vs Oracle")
+    plt.title(f"PPO {terrain.capitalize()} — Total reward: Base vs Waq vs Oracle")
     plt.legend(loc="lower right", fontsize=9)
     plt.grid(alpha=0.25)
     plt.tight_layout()
@@ -224,7 +224,7 @@ def plot_reward_curves(logdir: Path, terrain: str, outdir: Path, smooth_n: int) 
 
 
 def plot_terrain_level(logdir: Path, outdir: Path, smooth_n: int) -> None:
-    """지형 커리큘럼. 잘 걷는 정책일수록 더 어려운 지형으로 승급한다."""
+    """Terrain curriculum. The better a policy walks, the harder the terrain it gets promoted to."""
     plt.figure(figsize=(7, 4.5))
     any_data = False
     for cfg in CONFIGS:
@@ -238,11 +238,11 @@ def plot_terrain_level(logdir: Path, outdir: Path, smooth_n: int) -> None:
         plt.plot(steps, smooth(vals, smooth_n), color=COLORS[cfg], lw=1.8, label=cfg)
     if not any_data:
         plt.close()
-        print("[warn] terrain_level: 데이터 없음 — 건너뜀")
+        print("[warn] terrain_level: no data — skipping")
         return
     plt.xlabel("iteration")
     plt.ylabel("terrain level (curriculum)")
-    plt.title("PPO Rough — 지형 커리큘럼 승급")
+    plt.title("PPO Rough — Terrain curriculum promotion")
     plt.legend(loc="best", fontsize=9)
     plt.grid(alpha=0.25)
     plt.tight_layout()
@@ -257,7 +257,7 @@ def plot_bars(finals: dict[str, dict[str, float]], outdir: Path) -> None:
 
     terrains = [t for t in ("flat", "rough") if finals.get(t)]
     if not terrains:
-        print("[warn] bar_final: 최종값 없음 — 건너뜀")
+        print("[warn] bar_final: no final values — skipping")
         return
     x = np.arange(len(terrains))
     width = 0.25
@@ -271,7 +271,7 @@ def plot_bars(finals: dict[str, dict[str, float]], outdir: Path) -> None:
                          ha="center", va="bottom", fontsize=8)
     plt.xticks(x, [t.capitalize() for t in terrains])
     plt.ylabel("final underlying tracking")
-    plt.title("PPO 최종 속도추종 — Base vs Waq vs Oracle")
+    plt.title("PPO final velocity tracking — Base vs Waq vs Oracle")
     plt.ylim(0, 1.05)
     plt.legend(fontsize=9)
     plt.grid(axis="y", alpha=0.25)
@@ -284,7 +284,7 @@ def plot_bars(finals: dict[str, dict[str, float]], outdir: Path) -> None:
 
 def write_summary(finals: dict[str, dict[str, float]], outdir: Path,
                   stats: dict[str, dict[str, tuple[float, float, int]]] | None = None) -> None:
-    """최종값과 두 델타를 CSV 로 남기고 화면에도 찍는다."""
+    """Write the final values and both deltas to CSV and also print them."""
     stats = stats or {}
     out = outdir / "summary.csv"
     with out.open("w", newline="", encoding="utf-8") as fh:
@@ -306,7 +306,7 @@ def write_summary(finals: dict[str, dict[str, float]], outdir: Path,
     def cell(v: float | None) -> str:
         return f"{v:.3f}" if v is not None else "  -  "
 
-    print("\n=== 최종 underlying tracking (수렴 구간 평균) ===")
+    print("\n=== Final underlying tracking (mean over converged section) ===")
     print(f"{'terrain':8} {'Base':>7} {'Waq':>7} {'Oracle':>7} {'Waq-Base':>10} {'Oracle-Waq':>11}")
     for terrain in ("flat", "rough"):
         f = finals.get(terrain, {})
@@ -315,52 +315,52 @@ def write_summary(finals: dict[str, dict[str, float]], outdir: Path,
         d2 = f"{o - waq:+.3f}" if (o is not None and waq is not None) else "   -  "
         print(f"{terrain:8} {cell(b):>7} {cell(waq):>7} {cell(o):>7} {d1:>10} {d2:>11}")
 
-    # 차이가 노이즈인지 판단할 수 있게 표준오차를 함께 낸다.
+    # Report the standard error too, so you can judge whether a difference is noise.
     for terrain in ("flat", "rough"):
         st = stats.get(terrain, {})
         if not st:
             continue
-        print(f"\n--- {terrain} 수렴 구간 통계 (평균 ± 평균의 표준오차) ---")
+        print(f"\n--- {terrain} converged-section statistics (mean ± standard error of the mean) ---")
         for cfg in CONFIGS:
             if cfg in st:
                 m, se, n = st[cfg]
-                print(f"  {cfg:8} {m:.4f} ± {se:.4f}   (마지막 {n} iteration 평균)")
+                print(f"  {cfg:8} {m:.4f} ± {se:.4f}   (mean of last {n} iterations)")
         if "Waq" in st and "Base" in st:
             d = st["Waq"][0] - st["Base"][0]
             se = (st["Waq"][1] ** 2 + st["Base"][1] ** 2) ** 0.5
-            verdict = "유의" if abs(d) > 2 * se else "노이즈와 구분 안 됨"
+            verdict = "significant" if abs(d) > 2 * se else "indistinguishable from noise"
             print(f"  Waq-Base   {d:+.4f} ± {se:.4f}  → {verdict}")
         if "Oracle" in st and "Waq" in st:
             d = st["Oracle"][0] - st["Waq"][0]
             se = (st["Oracle"][1] ** 2 + st["Waq"][1] ** 2) ** 0.5
-            verdict = "유의" if abs(d) > 2 * se else "노이즈와 구분 안 됨"
+            verdict = "significant" if abs(d) > 2 * se else "indistinguishable from noise"
             print(f"  Oracle-Waq {d:+.4f} ± {se:.4f}  → {verdict}")
-        print("  주의: 단일 seed 다. 표준오차는 '한 런 안에서의 출렁임'만 재며,"
-              " seed 간 변동은 포함하지 않는다.")
+        print("  Note: single seed. The standard error only measures 'fluctuation within one run',"
+              " not variation across seeds.")
 
     rough = finals.get("rough", {})
     if all(k in rough for k in CONFIGS):
         ordered = rough["Base"] < rough["Waq"] < rough["Oracle"]
-        print(f"\nrough 에서 Base < Waq < Oracle 인가? "
-              f"{'예 — 논문 순서와 일치' if ordered else '아니오 — 해석이 필요하다'}")
-        print("  Waq - Base   = CENet 의 순수 기여")
-        print("  Oracle - Waq = 남은 격차 (추정 vs 진짜 특권정보)")
+        print(f"\nOn rough, is Base < Waq < Oracle? "
+              f"{'Yes — matches the paper ordering' if ordered else 'No — needs interpretation'}")
+        print("  Waq - Base   = pure contribution of CENet")
+        print("  Oracle - Waq = remaining gap (estimate vs true privileged info)")
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Base/Waq/Oracle 비교 그림과 요약표")
+    ap = argparse.ArgumentParser(description="Base/Waq/Oracle comparison figures and summary table")
     ap.add_argument("--logdir", type=Path, default=DEFAULT_LOGDIR,
-                    help="rsl_rl 로그 루트 (기본: dreamwaq_manager/logs/rsl_rl)")
+                    help="rsl_rl log root (default: dreamwaq_manager/logs/rsl_rl)")
     ap.add_argument("--outdir", type=Path, default=DEFAULT_OUTDIR,
-                    help="그림/CSV 출력 폴더 (기본: figures/)")
-    ap.add_argument("--smooth", type=int, default=5, help="곡선 이동평균 창 크기")
+                    help="output folder for figures/CSV (default: figures/)")
+    ap.add_argument("--smooth", type=int, default=5, help="moving-average window size for curves")
     ap.add_argument("--last-k", type=int, default=None,
-                    help="최종값을 낼 때 평균낼 마지막 iteration 수 (기본: 런의 10%%, 최소 50). "
-                         "작게 주면 노이즈에 휘둘려 부호가 뒤집힐 수 있다")
+                    help="number of last iterations to average for final values (default: 10%% of the run, min 50). "
+                         "Small values are swayed by noise and can flip the sign")
     args = ap.parse_args()
 
     if not args.logdir.is_dir():
-        raise SystemExit(f"로그 폴더가 없다: {args.logdir}\n  먼저 학습을 돌린다 (run_full_pipeline.sh)")
+        raise SystemExit(f"Log folder not found: {args.logdir}\n  Run training first (run_full_pipeline.sh)")
     args.outdir.mkdir(parents=True, exist_ok=True)
 
     finals: dict[str, dict[str, float]] = {}

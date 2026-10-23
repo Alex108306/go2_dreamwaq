@@ -2,102 +2,102 @@
 title: "Setup Guide (Isaac Sim 6.0 Binary)"
 ---
 
-본 문서는 처음 이 프로젝트를 받는 학생을 대상으로, **Isaac Sim 6.0 바이너리** 기반에서 IsaacLab + DreamWaQ를 설치하고 학습/평가 smoke test까지 검증하는 전 과정을 정리한다.
+This document is aimed at students receiving this project for the first time, and covers the full process of installing IsaacLab + DreamWaQ on top of the **Isaac Sim 6.0 binary** and verifying it all the way through training/evaluation smoke tests.
 
 - **OS**: Ubuntu (kernel 6.17 / GLIBC 2.39)
-- **GPU**: NVIDIA RTX 4080 16GB (CUDA 12.8+ 드라이버)
-- **Python**: 3.12.13 (Isaac Sim 번들 kit python 사용 — 별도 conda/venv 불필요)
+- **GPU**: NVIDIA RTX 4080 16GB (CUDA 12.8+ driver)
+- **Python**: 3.12.13 (uses Isaac Sim's bundled kit python — no separate conda/venv needed)
 
 ::: {.callout-important}
-**현재 환경은 Isaac Sim 6.0 바이너리 + IsaacLab `release/3.0.0-beta2` (번들 Python 3.12.13)** 이다.
-6.0 바이너리 도입의 전체 기록(브랜치 전환 근거, 트러블슈팅 표, 무해한 경고 목록)은 canonical 문서
+**The current environment is the Isaac Sim 6.0 binary + IsaacLab `release/3.0.0-beta2` (bundled Python 3.12.13).**
+The full record of adopting the 6.0 binary (rationale for the branch switch, troubleshooting table, list of harmless warnings) is in the canonical document
 [`IsaacSim_Lab_update.md`](https://github.com/curieuxjy/IsaacLab_DreamWaQ/blob/main/IsaacSim_Lab_update.md)
-(upstream repo) 에 정리되어 있다. 본 가이드는 그 핵심 절차를 요약하고
-DreamWaQ 패키지 설치/스모크 테스트까지 잇는다.
+(upstream repo). This guide summarizes its core procedure and
+continues through DreamWaQ package installation and smoke tests.
 :::
 
 ---
 
-## 0. 전체 그림
+## 0. The big picture
 
 ```
-[1] Isaac Sim 6.0 바이너리   →  ~/isaacsim   (이미 설치 가정; 번들 Python 3.12.13)
+[1] Isaac Sim 6.0 binary     →  ~/isaacsim   (assumed already installed; bundled Python 3.12.13)
         │
         ▼
 [2] IsaacLab clone          →  ~/IsaacLab
-        │  git checkout release/3.0.0-beta2     (★ 6.0에 맞는 브랜치)
+        │  git checkout release/3.0.0-beta2     (★ the branch matching 6.0)
         │  symlink _isaac_sim → ~/isaacsim
         │  UV_HTTP_TIMEOUT=600 ./isaaclab.sh -i
         ▼
-[3] DreamWaQ 패키지 설치
-        │  pip install -e dreamwaq_manager/source/dreamwaq_manager    (활성 스택)
+[3] Install the DreamWaQ packages
+        │  pip install -e dreamwaq_manager/source/dreamwaq_manager    (active stack)
         ▼
 [4] Smoke test (train + play)
 ```
 
-모든 Python 명령은 **`~/IsaacLab/_isaac_sim/python.sh`** 또는 동일 경로의 `~/IsaacLab/isaaclab.sh -p`로 실행한다(번들 kit python). 별도 conda/venv는 만들지 않는다.
+All Python commands are run with **`~/IsaacLab/_isaac_sim/python.sh`** or the equivalent `~/IsaacLab/isaaclab.sh -p` (bundled kit python). Do not create a separate conda/venv.
 
 ---
 
-## 1. Isaac Sim 6.0 바이너리
+## 1. Isaac Sim 6.0 binary
 
-본 환경은 Isaac Sim **6.0.0 바이너리**가 `~/isaacsim`에 이미 설치되어 있다고 가정한다(번들 Python 3.12.13). 설치 확인:
+This environment assumes the Isaac Sim **6.0.0 binary** is already installed at `~/isaacsim` (bundled Python 3.12.13). Verify the installation:
 
 ```bash
 cat ~/isaacsim/VERSION                                    # 6.0.0-rc...
 ~/isaacsim/python.sh -c "import sys; print(sys.version)"   # 3.12.13
 ```
 
-> 과거 5.1 소스 빌드(`git clone IsaacSim → ./build.sh`) 절차는 더 이상 쓰지 않는다.
+> The old 5.1 source-build procedure (`git clone IsaacSim → ./build.sh`) is no longer used.
 
 ---
 
-## 2. IsaacLab 설치
+## 2. Install IsaacLab
 
-### 2.1 클론 + 브랜치 전환 + Isaac Sim 연결
+### 2.1 Clone + switch branch + link Isaac Sim
 
 ```bash
 cd ~
 git clone https://github.com/isaac-sim/IsaacLab.git
 cd ~/IsaacLab
 git fetch --all --tags
-git checkout release/3.0.0-beta2          # ★ 6.0에 맞는 브랜치 (가장 중요)
-ln -s ~/isaacsim _isaac_sim               # 바이너리를 직접 심링크
+git checkout release/3.0.0-beta2          # ★ the branch matching 6.0 (most important)
+ln -s ~/isaacsim _isaac_sim               # symlink the binary directly
 ```
 
-### 2.2 IsaacLab 패키지 설치
+### 2.2 Install the IsaacLab packages
 
-NVIDIA pip 미러가 느려 타임아웃을 늘린다. 시스템 빌드 도구(cmake/gcc)나 git이 없으면 먼저 설치한다.
+The NVIDIA pip mirror is slow, so increase the timeout. If system build tools (cmake/gcc) or git are missing, install them first.
 
 ```bash
-sudo apt-get install -y --no-install-recommends cmake build-essential git   # 최초 1회
+sudo apt-get install -y --no-install-recommends cmake build-essential git   # first time only
 cd ~/IsaacLab
 export UV_HTTP_TIMEOUT=600
 ./isaaclab.sh -i
 ```
 
 ::: {.callout-warning}
-번들 kit python의 pip가 대용량 휠(torch/CUDA) 다운로드 중 **간헐적 segfault**를 낼 수 있다.
-`./isaaclab.sh -i`는 멱등하므로, 실패하면 pip 캐시가 누적되도록 **성공할 때까지 재실행**하면 된다(보통 수 회 내 완료).
+The bundled kit python's pip can **intermittently segfault** while downloading large wheels (torch/CUDA).
+`./isaaclab.sh -i` is idempotent, so if it fails just **rerun until it succeeds** so the pip cache accumulates (usually completes within a few tries).
 :::
 
-### 2.3 `isaaclab` core 패키지 보완 설치 {.unnumbered}
+### 2.3 Supplementary install of the `isaaclab` core package {.unnumbered}
 
 ::: {.callout-warning}
-`./isaaclab.sh --install`이 일부 환경에서 **`source/isaaclab`(core)** 만 누락하고 종료되는 케이스가 확인되었다.
+In some environments `./isaaclab.sh --install` has been observed to exit having skipped only **`source/isaaclab` (core)**.
 :::
 
 ```bash
 ~/IsaacLab/_isaac_sim/python.sh -c "import isaaclab; print(isaaclab.__version__)"
 ```
 
-`ModuleNotFoundError` 가 뜨면:
+If you get a `ModuleNotFoundError`:
 
 ```bash
 ~/IsaacLab/_isaac_sim/python.sh -m pip install -e ~/IsaacLab/source/isaaclab
 ```
 
-### 2.4 RSL-RL 설치
+### 2.4 Install RSL-RL
 
 ```bash
 ~/IsaacLab/_isaac_sim/python.sh -m pip install rsl-rl-lib
@@ -106,53 +106,53 @@ export UV_HTTP_TIMEOUT=600
 
 ---
 
-## 3. DreamWaQ 패키지 설치
+## 3. Install the DreamWaQ packages
 
-두 구현 모두 설치하거나 필요한 것만 선택한다.
+Install both implementations, or pick only the one you need.
 
-### 3.1 ManagerBased 버전 (`dreamwaq_manager`)
+### 3.1 ManagerBased version (`dreamwaq_manager`)
 
 ```bash
-cd ~/Documents/lec_dreamwaq/dreamwaq_manager
+cd ~/Master_Thesis/go2_dreamwaq/dreamwaq_isaaclab/dreamwaq_manager
 ~/IsaacLab/_isaac_sim/python.sh -m pip install -e source/dreamwaq_manager
 ```
 
-Task 등록 검증:
+Verify task registration:
 ```bash
 ~/IsaacLab/_isaac_sim/python.sh -c \
   "import dreamwaq_manager.tasks; import gymnasium as gym; \
    print([e for e in gym.registry if 'Manager' in e and 'DreamWaQ' in e])"
 ```
 
-기대 출력 (6개):
+Expected output (6 tasks):
 ```
 ['DreamWaQ-Manager-Go2-Base-v0', 'DreamWaQ-Manager-Go2-Base-Play-v0',
  'DreamWaQ-Manager-Go2-Oracle-v0', 'DreamWaQ-Manager-Go2-Oracle-Play-v0',
  'DreamWaQ-Manager-Go2-Waq-v0', 'DreamWaQ-Manager-Go2-Waq-Play-v0']
 ```
 
-### 3.2 Direct 버전 (`dreamwaq_direct`)
+### 3.2 Direct version (`dreamwaq_direct`)
 
 ::: {.callout-warning}
-`dreamwaq_direct`는 동일 알고리즘의 DirectRLEnv 포팅으로 cross-check 용도다. 종료 조건은 원본
-IsaacGym 과 동일한 **몸통 접촉력 > 1 N** 이며 `dreamwaq_manager`(§3.1) 와 같으므로 두 스택의 수치는
-서로 비교 가능하다 (4096 envs 실측 확인). 생성 지형에서 접촉 센서가 깨지던 원인과 수정 내역은
-`dreamwaq_direct/KNOWN_ISSUES.md` 참조.
+`dreamwaq_direct` is a DirectRLEnv port of the same algorithm, used for cross-checking. Its termination condition is the
+same **base contact force > 1 N** as the original IsaacGym and matches `dreamwaq_manager` (§3.1), so the numbers from the two stacks are
+comparable (verified with 4096 envs). For the cause of the contact sensor breaking on generated terrain and the fix, see
+`dreamwaq_direct/KNOWN_ISSUES.md`.
 :::
 
 ```bash
-cd ~/Documents/lec_dreamwaq/dreamwaq_direct
+cd ~/Master_Thesis/go2_dreamwaq/dreamwaq_isaaclab/dreamwaq_direct
 ~/IsaacLab/_isaac_sim/python.sh -m pip install -e source/dreamwaq_direct
 ```
 
-Task 등록 검증:
+Verify task registration:
 ```bash
 ~/IsaacLab/_isaac_sim/python.sh -c \
   "import dreamwaq_direct.tasks; import gymnasium as gym; \
    print([e for e in gym.registry if 'Direct' in e and 'DreamWaQ' in e])"
 ```
 
-기대 출력 (6개):
+Expected output (6 tasks):
 ```
 ['DreamWaQ-Direct-Go2-Base-v0', 'DreamWaQ-Direct-Go2-Base-Play-v0',
  'DreamWaQ-Direct-Go2-Oracle-v0', 'DreamWaQ-Direct-Go2-Oracle-Play-v0',
@@ -161,26 +161,26 @@ Task 등록 검증:
 
 ---
 
-## 4. 실행 alias 설정 (편의)
+## 4. Set up run aliases (convenience)
 
-`train.py`/`play.py`가 쓰는 `cli_args.py`는 이제 각 패키지의 **`scripts/rsl_rl/`에 동봉**되어 있어, 예전처럼 `PYTHONPATH`에 IsaacLab 스크립트 경로를 추가할 필요가 **없다**.
+The `cli_args.py` used by `train.py`/`play.py` is now **bundled in each package's `scripts/rsl_rl/`**, so there is **no** need to add the IsaacLab scripts path to `PYTHONPATH` as before.
 
-편의를 위해 Isaac Sim 번들 Python alias만 등록한다:
+For convenience, register only an alias for Isaac Sim's bundled Python:
 ```bash
 echo 'alias isaacpy="$HOME/IsaacLab/_isaac_sim/python.sh"' >> ~/.bashrc
 source ~/.bashrc
 ```
 
-이후 가이드는 `isaacpy` 가 등록되었다고 가정한다.
+The rest of this guide assumes `isaacpy` has been registered.
 
 ---
 
 ## 5. Smoke test
 
-### 5.1 ManagerBased 버전
+### 5.1 ManagerBased version
 
 ```bash
-cd ~/Documents/lec_dreamwaq/dreamwaq_manager/scripts
+cd ~/Master_Thesis/go2_dreamwaq/dreamwaq_isaaclab/dreamwaq_manager/scripts
 
 # Base
 isaacpy rsl_rl/train.py --task=DreamWaQ-Manager-Go2-Base-v0 \
@@ -195,15 +195,15 @@ isaacpy rsl_rl/train.py --task=DreamWaQ-Manager-Go2-Waq-v0 \
   --headless --num_envs=64 --max_iterations=3
 ```
 
-또는 한 번에:
+Or all at once:
 ```bash
 ./quick_test.sh
 ```
 
-### 5.2 Direct 버전
+### 5.2 Direct version
 
 ```bash
-cd ~/Documents/lec_dreamwaq/dreamwaq_direct/scripts
+cd ~/Master_Thesis/go2_dreamwaq/dreamwaq_isaaclab/dreamwaq_direct/scripts
 
 # Base
 isaacpy rsl_rl/train.py --task=DreamWaQ-Direct-Go2-Base-v0 \
@@ -218,43 +218,43 @@ isaacpy rsl_rl/train.py --task=DreamWaQ-Direct-Go2-Waq-v0 \
   --headless --num_envs=64 --max_iterations=3
 ```
 
-또는 한 번에:
+Or all at once:
 ```bash
 ./quick_test.sh
 ```
 
-각각 로그에 `Training time: X.XX seconds` 가 출력되면 성공.
+Success if each log prints `Training time: X.XX seconds`.
 
 ### 5.3 Inference (play.py)
 
 ```bash
-# ManagerBased 버전
-cd ~/Documents/lec_dreamwaq/dreamwaq_manager/scripts
+# ManagerBased version
+cd ~/Master_Thesis/go2_dreamwaq/dreamwaq_isaaclab/dreamwaq_manager/scripts
 isaacpy rsl_rl/play.py --task=DreamWaQ-Manager-Go2-Base-Play-v0 \
   --headless --num_envs=4 \
   --load_run=<FOLDER> --checkpoint=model_2.pt
 
-# Direct 버전
-cd ~/Documents/lec_dreamwaq/dreamwaq_direct/scripts
+# Direct version
+cd ~/Master_Thesis/go2_dreamwaq/dreamwaq_isaaclab/dreamwaq_direct/scripts
 isaacpy rsl_rl/play.py --task=DreamWaQ-Direct-Go2-Base-Play-v0 \
   --headless --num_envs=4 \
   --load_run=<FOLDER> --checkpoint=model_2.pt
 ```
 
 ::: {.callout-note}
-`play.py`는 무한 루프이다. Ctrl+C로 종료한다.
+`play.py` is an infinite loop. Exit with Ctrl+C.
 :::
 
 ---
 
-## 6. 로컬 에셋 설정 (필수 — 학습 안정성)
+## 6. Local asset setup (required — training stability)
 
-Isaac Sim은 기본적으로 로봇 USD 에셋을 **NVIDIA S3 클라우드**에서 매번 다운로드한다. 네트워크 상태에 따라 학습이 hang되므로, **로컬에 미리 다운로드**해야 한다.
+By default Isaac Sim downloads robot USD assets from the **NVIDIA S3 cloud** every time. Depending on network conditions training can hang, so you must **download them locally in advance**.
 
-### 6.1 에셋 다운로드
+### 6.1 Download the assets
 
 ```bash
-# Go2 로봇 에셋
+# Go2 robot assets
 mkdir -p ~/IsaacLab/data/Assets/Isaac/6.0/Isaac/IsaacLab/Robots/Unitree/Go2/Props
 
 curl -L -o ~/IsaacLab/data/Assets/Isaac/6.0/Isaac/IsaacLab/Robots/Unitree/Go2/go2.usd \
@@ -263,7 +263,7 @@ curl -L -o ~/IsaacLab/data/Assets/Isaac/6.0/Isaac/IsaacLab/Robots/Unitree/Go2/go
 curl -L -o ~/IsaacLab/data/Assets/Isaac/6.0/Isaac/IsaacLab/Robots/Unitree/Go2/Props/instanceable_meshes.usd \
   "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/6.0/Isaac/IsaacLab/Robots/Unitree/Go2/Props/instanceable_meshes.usd"
 
-# UI 마커 에셋 (debug_vis=True 시 필요 — play 모드에서 사용)
+# UI marker assets (needed when debug_vis=True — used in play mode)
 mkdir -p ~/IsaacLab/data/Assets/Isaac/6.0/Isaac/Props/UIElements
 
 curl -L -o ~/IsaacLab/data/Assets/Isaac/6.0/Isaac/Props/UIElements/arrow_x.usd \
@@ -273,9 +273,9 @@ curl -L -o ~/IsaacLab/data/Assets/Isaac/6.0/Isaac/Props/UIElements/frame_prim.us
   "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/6.0/Isaac/Props/UIElements/frame_prim.usd"
 ```
 
-### 6.2 Isaac Sim config 수정
+### 6.2 Edit the Isaac Sim config
 
-Isaac Sim 6.0 바이너리의 경우 `~/isaacsim/kit/data/Kit/IsaacLab/3.0/user.config.json` 파일을 열고(소스 빌드/5.1은 `~/.cache/packman/.../Isaac-Sim/5.1/user.config.json`), `asset_root` 섹션의 URL을 로컬 경로로 변경:
+For the Isaac Sim 6.0 binary, open `~/isaacsim/kit/data/Kit/IsaacLab/3.0/user.config.json` (for source build/5.1: `~/.cache/packman/.../Isaac-Sim/5.1/user.config.json`) and change the URLs in the `asset_root` section to local paths:
 
 ```json
 "isaac": {
@@ -289,54 +289,54 @@ Isaac Sim 6.0 바이너리의 경우 `~/isaacsim/kit/data/Kit/IsaacLab/3.0/user.
 ```
 
 ::: {.callout-warning}
-Isaac Sim 재설치 또는 kit-kernel 캐시 갱신 시 이 설정을 다시 적용해야 한다.
+This setting must be reapplied after reinstalling Isaac Sim or refreshing the kit-kernel cache.
 :::
 
-### 6.3 시스템 성능 설정
+### 6.3 System performance settings
 
-대규모 환경 (4096+ envs) 학습 시:
+When training large environments (4096+ envs):
 
 ```bash
-# CPU governor를 performance로 설정
+# Set the CPU governor to performance
 echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 
-# GPU Persistence Mode 활성화
+# Enable GPU Persistence Mode
 sudo nvidia-smi -pm 1
 
-# Swap 확보 (8GB 이상 권장)
+# Ensure swap (8GB or more recommended)
 sudo fallocate -l 8G /swapfile && sudo chmod 600 /swapfile
 sudo mkswap /swapfile && sudo swapon /swapfile
 ```
 
-RTX 4080 (16GB VRAM, 32GB RAM) 기준 **최대 안정 num_envs = 4096**.
+On an RTX 4080 (16GB VRAM, 32GB RAM) the **maximum stable num_envs = 4096**.
 
-### 6.4 debug_vis 설정
+### 6.4 debug_vis settings
 
-학습 시 (`--headless`) velocity command의 `debug_vis`는 **False** (두 구현 모두 동일).
-Play 시 (`Play-v0` 태스크)에서만 `debug_vis=True`로 전환.
+During training (`--headless`), the velocity command's `debug_vis` is **False** (same for both implementations).
+It is switched to `debug_vis=True` only during play (`Play-v0` tasks).
 
 ---
 
-## 7. 트러블슈팅
+## 7. Troubleshooting
 
-| 증상 | 해결 |
+| Symptom | Fix |
 |---|---|
 | `ModuleNotFoundError: No module named 'isaaclab'` | §2.3 — `pip install -e ~/IsaacLab/source/isaaclab` |
-| `ModuleNotFoundError: No module named 'cli_args'` | §4 — `cli_args`는 각 패키지 `scripts/rsl_rl/`에 동봉됨. 프로젝트 루트(예: `dreamwaq_manager/`)에서 실행 |
-| `./isaaclab.sh -i` 중 pip `Segmentation fault` | §2.2 — 멱등하므로 성공할 때까지 재실행(캐시 누적) |
-| `nvidia-cudnn-cu12` 다운로드 timeout | `export UV_HTTP_TIMEOUT=600` 후 재시도 |
-| `ImportError: __nvJitLinkCreate_12_8` | `~/.bashrc`에서 시스템 CUDA `LD_LIBRARY_PATH` 제거 |
-| `play.py`가 끝나지 않음 | 정상 동작. Ctrl+C로 종료 |
-| 첫 실행이 수 분 멈춤 | 정상 — shader/extension 캐싱 |
-| 학습이 scene 생성 중 hang | §6 로컬 에셋 설정 확인 |
-| Bus Error at 8192 envs | swap 부족. §6.3 참고 |
+| `ModuleNotFoundError: No module named 'cli_args'` | §4 — `cli_args` is bundled in each package's `scripts/rsl_rl/`. Run from the project root (e.g. `dreamwaq_manager/`) |
+| pip `Segmentation fault` during `./isaaclab.sh -i` | §2.2 — it is idempotent, so rerun until it succeeds (cache accumulates) |
+| `nvidia-cudnn-cu12` download timeout | Retry after `export UV_HTTP_TIMEOUT=600` |
+| `ImportError: __nvJitLinkCreate_12_8` | Remove the system CUDA `LD_LIBRARY_PATH` from `~/.bashrc` |
+| `play.py` never finishes | Expected behavior. Exit with Ctrl+C |
+| First run stalls for several minutes | Expected — shader/extension caching |
+| Training hangs during scene creation | Check the local asset setup in §6 |
+| Bus Error at 8192 envs | Not enough swap. See §6.3 |
 
 ---
 
-## 8. 다음 단계
+## 8. Next steps
 
-- **본격 학습**: `--num_envs=4096 --max_iterations=1500` 으로 풀 학습 ([`dreamwaq_manager/README.md`](dreamwaq_manager/README.md))
-- **WandB 로깅**: `--logger=wandb` (사전에 `wandb login` 필요)
-- **평가 영상 녹화**: `--video --enable_cameras --video_length=400`
-- **구현 비교**: `comparison.qmd` — 두 구현의 정렬 현황 및 차이 분석 ([upstream repo](https://github.com/curieuxjy/IsaacLab_DreamWaQ))
-- **Sim-to-Sim 배포**: upstream repo 의 `deploy_sim2sim/` (ROS 2 Jazzy + Gazebo Harmonic) 참고
+- **Full training**: train fully with `--num_envs=4096 --max_iterations=1500` ([`dreamwaq_manager/README.md`](dreamwaq_manager/README.md))
+- **WandB logging**: `--logger=wandb` (requires `wandb login` beforehand)
+- **Record evaluation videos**: `--video --enable_cameras --video_length=400`
+- **Implementation comparison**: `comparison.qmd` — alignment status and difference analysis of the two implementations ([upstream repo](https://github.com/curieuxjy/IsaacLab_DreamWaQ))
+- **Sim-to-Sim deployment**: see `deploy_sim2sim/` in the upstream repo (ROS 2 Jazzy + Gazebo Harmonic)

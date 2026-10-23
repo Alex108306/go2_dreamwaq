@@ -2,20 +2,20 @@ id = "cenet-loss"
 level = 2
 stage = "stage4_cenet"
 source = "dreamwaq_manager/source/dreamwaq_manager/dreamwaq_manager/algorithms/cenet.py"
-task = "CENet 의 세 손실 항(vel / recon / KL)과 총합을 완성한다"
+task = "Complete CENet's three loss terms (vel / recon / KL) and their total"
 hints = [
-    "vel_loss 는 est_vel 과 true_vel 의 MSE, recon_loss 는 est_onext 와 true_onext 의 MSE 다",
-    "q(z|x)=N(mu, exp(logvar)) 와 p(z)=N(0, I) 사이의 KL 은 닫힌 형태다. std 가 아니라 logvar 를 받는다",
-    # 이 힌트는 일부러 축을 지정하지 않는다. 이 실습이 가르치려는 유일한 개념적 결정이
-    # "KL 을 어느 축으로 줄이느냐" 인데, 답을 여기 적으면 L2 가 아니라 받아쓰기가 된다.
-    # 교과서대로 sum 을 써 보고 검사기의 `kl_loss=8.0000 (기대 0.5)` 를 맞은 뒤 README 의
-    # '리덕션 축' 절을 읽는 것이 의도한 경로다 (learner 검증, 2026-08-30).
-    "nn.MSELoss() 는 차원 평균이다. KL 도 같은 축으로 축약해야 한다. 그리고 total_loss.backward() 는 스칼라를 요구한다",
-    "beta 가 곱해지는 것은 KL 항 뿐이다 (beta-VAE)",
+    "vel_loss is the MSE of est_vel and true_vel; recon_loss is the MSE of est_onext and true_onext",
+    "The KL between q(z|x)=N(mu, exp(logvar)) and p(z)=N(0, I) has a closed form. It takes logvar, not std",
+    # This hint deliberately does not specify the axis. The only conceptual decision this exercise
+    # teaches is "which axis to reduce the KL over"; writing the answer here turns L2 into dictation.
+    # The intended path is: use sum as in the textbook, get hit by the checker's `kl_loss=8.0000 (expected 0.5)`, then read the
+    # 'Reduction axis' section of the README (learner-verified, 2026-08-30).
+    "nn.MSELoss() is a per-dimension mean. The KL must be reduced over the same axis. Also, total_loss.backward() requires a scalar",
+    "Only the KL term is multiplied by beta (beta-VAE)",
 ]
 
-# 원본에서 그대로 잘라낼 구간. 소스가 바뀌면 생성기가 "찾지 못했다"고 실패하므로
-# 조용히 어긋나는 일은 없다. 그때는 이 body 를 현재 코드로 갱신한다.
+# The section to cut out verbatim from the original. If the source changes, the generator fails with "not found",
+# so it never silently drifts. When that happens, update this body to the current code.
 body = """            mse_loss = nn.MSELoss()
             vel_loss = mse_loss(est_vel_batch, true_vel_batch)
             recon_loss = mse_loss(est_onext_batch, true_onext_batch)
@@ -37,16 +37,16 @@ body = """            mse_loss = nn.MSELoss()
             total_loss = vel_loss + recon_loss + kl_loss
 """
 
-# --- 실험용 게이트를 실습 본문에서 가린다 ---------------------------------------------
-# 프로덕션 cenet.py 에는 DWQ_CENET_* 환경변수 게이트가 있다 (커밋 c46b64f). 전부 기본 off 이고,
-# 붕괴 원인을 한 변수씩 떼어 보려고 만든 실험용 스위치다. 실습에서 가리는 이유는 둘이다.
-#   (1) DWQ_CENET_KL_REDUCTION=sum 이 이 실습 README 의 "KL 도 차원당 평균이어야 한다" 와
-#       정면으로 부딪친다. 설명 없이 보이면 학습자는 무엇이 옳은지 알 수 없다.
-#   (2) _kl_per_dim() / _kl_term_gated() 가 지금 채워야 할 KL 식을 그대로 담고 있다 —
-#       starter 에 두면 답안지를 함께 배포하는 셈이다 (self._kl_term_gated(mu, logvar) 한 줄로
-#       검사기를 통과할 수 있다).
-# 프로덕션 소스는 건드리지 않고 생성 시점에만 가린다. 왜 실제 소스와 다른지는 이 실습의
-# README.md '실제 소스에는 스위치가 더 있다' 절에 적어 두었다.
+# --- Hide the experiment gates from the exercise body ---------------------------------------------
+# The production cenet.py has DWQ_CENET_* env-var gates (commit c46b64f). All are off by default;
+# they are experiment switches made to isolate the cause of collapse one variable at a time. There are two reasons to hide them in the exercise.
+#   (1) DWQ_CENET_KL_REDUCTION=sum directly contradicts this exercise README's "the KL must also be a
+#       per-dimension mean". Seen without explanation, the learner can't tell which is right.
+#   (2) _kl_per_dim() / _kl_term_gated() contain exactly the KL formula to be filled in now —
+#       leaving them in the starter would be shipping the answer key with it (one line, self._kl_term_gated(mu, logvar),
+#       passes the checker).
+# The production source is left untouched; they are hidden only at generation time. Why it differs from the real source is written in
+# the 'The real source has more switches' section of this exercise's README.md.
 
 [[also_mask]]
 find = """        # --- experiment gates (env vars) ----------------------------------------------------
@@ -140,14 +140,14 @@ find = """        # --- experiment gates (env vars) ----------------------------
             raise ValueError(f"DWQ_CENET_DEC_VEL must be keep|zero|detach, got {self.decoder_vel_mode!r}")
         # A latent dim counts as "alive" above this per-dim KL (nats). Only a diagnostic.
         self.kl_active_eps = 0.01"""
-replace = """        # 실험용 환경변수 게이트(DWQ_CENET_*)는 이 실습을 만들 때 걷어냈다 — 전부 기본 off 라
-        # 학습이 쓰는 수식은 달라지지 않는다. 게이트가 읽던 값들(free_bits / kl_reduction /
-        # beta_anneal / beta_limit)도 같이 지웠다: 남겨 두면 아래 TODO 에서 KL 을 어느 축으로
-        # 줄일지 정할 때 `kl_reduction == "sum"` 분기를 써야 하나 하고 헤매게 된다.
-        # 왜 그런 스위치가 프로덕션 소스에 있는지는 이 실습 폴더의 README.md 를 본다.
-        self.grad_clip = 1.0  # 이 파일에서 실제로 읽히는 유일한 설정값 — PPO 의 max_grad_norm 과 같은 예산
-        # 진단 주석이 가리키는 문턱값(차원당 KL 이 이 위면 '살아 있는' 잠재 차원).
-        # 진단 계산 자체를 아래에서 걷어냈으므로 이 실습에서는 읽는 곳이 없다.
+replace = """        # The experiment env-var gates (DWQ_CENET_*) were stripped when making this exercise — all are off by default, so
+        # the formulas used in training don't change. The values the gates read (free_bits / kl_reduction /
+        # beta_anneal / beta_limit) were removed too: if left in, when deciding which axis to reduce the KL over in the TODO below
+        # you'd wander around wondering whether to use a `kl_reduction == "sum"` branch.
+        # For why such switches exist in the production source, see README.md in this exercise folder.
+        self.grad_clip = 1.0  # The only setting actually read in this file — same budget as PPO's max_grad_norm
+        # The threshold the diagnostic comment refers to (a latent dim is 'alive' if its per-dim KL is above this).
+        # The diagnostic computation itself was stripped below, so nothing reads it in this exercise.
         self.kl_active_eps = 0.01"""
 
 [[also_mask]]
@@ -164,13 +164,13 @@ find = """        _non_default = (
                 f"min_lr={min_lr} epochs={num_learning_epochs}x{num_mini_batches} "
                 f"dec_vel={self.decoder_vel_mode}"
             )"""
-replace = """        # (게이트 설정 진단 출력은 이 실습에서 걷어냈다.)"""
+replace = """        # (Gate-setting diagnostic output was stripped in this exercise.)"""
 
 [[also_mask]]
 find = """        if self.decoder_vel_mode != "keep":
             # num_vel=3 matches forward()'s `h.split([3, ...])`.
             decoder_layers.insert(0, _DecoderVelGate(self.decoder_vel_mode, num_vel=3))"""
-replace = """        # (실험용 디코더 게이트 삽입 지점 — 이 실습에서는 걷어냈다.)"""
+replace = """        # (Insertion point of the experimental decoder gate — stripped in this exercise.)"""
 
 [[also_mask]]
 find = """class _DecoderVelGate(nn.Module):
@@ -208,8 +208,8 @@ find = """class _DecoderVelGate(nn.Module):
 
 
 class CenetRolloutStorage:"""
-# 클래스를 통째로 지운다 — 삽입 지점(decoder_layers.insert)도 위에서 가려서, 남겨 두면
-# 아무 데서도 인스턴스화되지 않는 빈 껍데기가 된다.
+# Delete the class wholesale — the insertion point (decoder_layers.insert) is also masked above, so if left in
+# it would be an empty shell that is never instantiated anywhere.
 replace = """class CenetRolloutStorage:"""
 
 [[also_mask]]
@@ -256,8 +256,8 @@ find = """    @staticmethod
         kl_per_dim = torch.clamp(self._kl_per_dim(mu, logvar), min=self.free_bits)
         kl = kl_per_dim.sum() if self.kl_reduction == "sum" else kl_per_dim.mean()
         return kl.reshape(1) * self.beta"""
-replace = """    # (잠재 차원별 KL 진단 도우미와 게이트용 KL 항은 이 실습에서 걷어냈다 —
-    #  둘 다 지금 채워야 할 KL 식을 그대로 담고 있어서 답안지가 된다.)"""
+replace = """    # (The per-latent-dim KL diagnostic helper and the gated KL term were stripped in this exercise —
+    #  both contain exactly the KL formula you must fill in now, so they would be an answer key.)"""
 
 [[also_mask]]
 find = """            # Probe gates (OFF by default -> this block never runs and the numbers above are
@@ -267,12 +267,12 @@ find = """            # Probe gates (OFF by default -> this block never runs and
             if self.free_bits > 0.0 or self.kl_reduction != "mean":
                 kl_loss = self._kl_term_gated(mu_batch, logvar_batch)
                 total_loss = vel_loss + recon_loss + kl_loss"""
-replace = """            # (실험용 게이트 오버라이드는 이 실습에서 걷어냈다.)"""
+replace = """            # (The experimental gate override was stripped in this exercise.)"""
 
 [[also_mask]]
 find = """            # Default 1.0 (same budget PPO uses); None only via DWQ_CENET_GRAD_CLIP=0 or the
             # DWQ_CENET_REFERENCE preset, where there is no clipping at all."""
-replace = """            # PPO 와 같은 예산(1.0)으로 CENet gradient 도 자른다."""
+replace = """            # Clip the CENet gradient with the same budget as PPO (1.0)."""
 
 [[also_mask]]
 find = """            with torch.no_grad():
@@ -284,8 +284,8 @@ find = """            with torch.no_grad():
 replace = """            with torch.no_grad():
                 mean_mu_abs += mu_batch.abs().mean().item()
                 mean_sigma += (0.5 * logvar_batch).exp().mean().item()
-                # 잠재 차원별 KL 진단(kl_active_dims / kl_nats)은 이 실습에서 걷어냈다 —
-                # 그 계산이 곧 위에서 채워야 할 KL 식이기 때문이다. 프로덕션 소스에는 있다."""
+                # The per-latent-dim KL diagnostic (kl_active_dims / kl_nats) was stripped in this exercise —
+                # that computation is exactly the KL formula you must fill in above. It exists in the production source."""
 
 [[also_mask]]
 find = """        # beta annealing (IsaacGym-original behaviour, off by default): applied AFTER the losses of this
@@ -293,8 +293,8 @@ find = """        # beta annealing (IsaacGym-original behaviour, off by default)
         # ~139 updates. The runner checkpoints `cenet_beta`, so a resumed run keeps its place.
         if self.beta_anneal:
             self.beta = min(self.beta * self.beta_anneal_rate, self.beta_limit)"""
-replace = """        # (β annealing 은 실험용 게이트라 이 실습에서 걷어냈다. 논문 eq.7 은 β 에 스케줄을
-        #  주지 않는데, "그러니 상수" 는 논문 문장이 아니라 우리 독법이다 — README 를 본다.)"""
+replace = """        # (β annealing is an experiment gate, so it was stripped in this exercise. Paper eq.7 gives β no schedule,
+        #  and "therefore constant" is our reading, not a sentence from the paper — see the README.)"""
 
 [[also_mask]]
 find = """import os

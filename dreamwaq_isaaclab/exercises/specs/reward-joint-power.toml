@@ -2,12 +2,12 @@ id = "reward-joint-power"
 level = 1
 stage = "stage2_env"
 source = "dreamwaq_manager/source/dreamwaq_manager/dreamwaq_manager/tasks/locomotion/mdp/rewards.py"
-task = "관절 파워 소비 페널티를 완성한다: sum(|토크| x |각속도|)"
+task = "Complete the joint power consumption penalty: sum(|torque| x |angular velocity|)"
 hints = [
-    "토크는 asset.data.applied_torque, 각속도는 asset.data.joint_vel 이다",
-    "둘 다 절댓값을 취한다 — 파워를 '소비량'으로 보므로 부호는 중요하지 않다",
-    "asset_cfg.joint_ids 로 대상 관절을 골라야 한다",
-    "12개 관절을 dim=1 로 합해 env 당 스칼라 하나를 만든다",
+    "Torque is asset.data.applied_torque, angular velocity is asset.data.joint_vel",
+    "Take the absolute value of both — power is treated as 'consumption', so the sign doesn't matter",
+    "You must select the target joints with asset_cfg.joint_ids",
+    "Sum the 12 joints with dim=1 to get one scalar per env",
 ]
 body = """    asset = env.scene[asset_cfg.name]
     return torch.sum(

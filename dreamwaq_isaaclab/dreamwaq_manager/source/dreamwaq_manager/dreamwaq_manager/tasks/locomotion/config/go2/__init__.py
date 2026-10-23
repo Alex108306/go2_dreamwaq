@@ -72,17 +72,17 @@ gym.register(
 )
 
 ##
-# Stage 1 강의의 실제 비교축 — 공식 env 레시피 위에서 actor 관측만 수술한 3변형.
+# The actual comparison axis of the Stage 1 course — 3 variants on top of the official env recipe, with only the actor observation altered.
 #
-# 원본 DreamWaQ 레시피(±1 m/s x 3축 push 매 1초, DreamWaQ 보상 세트)로는 모든 알고리즘이
-# underlying 0.16~0.26 에서 정체하고 보행에 실패한다. 원인이 CENet 이 아니라 env 설계임을
-# 확인해 전 매트릭스를 공식 레시피로 통일했다 (report.qmd §1).
+# With the original DreamWaQ recipe (±1 m/s x 3-axis push every 1 s, DreamWaQ reward set), every algorithm
+# plateaus at underlying 0.16~0.26 and fails to walk. Having confirmed that the cause is the env design, not CENet,
+# the whole matrix was unified onto the official recipe (report.qmd §1).
 #
-#   Base   actor 45 (blind)                        하한선
-#   Oracle actor 48 (+ true lin_vel)               속도 정보 상한선
-#   Waq    actor 45 -> 64 (+ CENet est_vel+context) DreamWaQ 제안
+#   Base   actor 45 (blind)                        lower bound
+#   Oracle actor 48 (+ true lin_vel)               upper bound on velocity information
+#   Waq    actor 45 -> 64 (+ CENet est_vel+context) DreamWaQ proposal
 #
-# critic 은 셋 다 privileged (공식 관측 전체 + rough 는 height_scan).
+# All three critics are privileged (full official observation + height_scan for rough).
 ##
 
 # Flat Oracle used to point at the stock UnitreeGo2FlatEnvCfg; it now needs a local subclass
@@ -103,7 +103,7 @@ for _terrain, _envcls in (("Flat", "OracleOfficialFlatEnvCfg"), ("Rough", "Oracl
 
 for _terrain, _envcls in (("Flat", "WaqOfficialFlatEnvCfg"), ("Rough", "WaqOfficialRoughEnvCfg")):
     for _suffix, _envsfx in (("", ""), ("-Play", "_PLAY")):
-        # Base: blind actor 45 + privileged critic, Waq 와 같은 hparam (Waq - Base = CENet 순수 기여)
+        # Base: blind actor 45 + privileged critic, same hparams as Waq (Waq - Base = pure CENet contribution)
         gym.register(
             id=f"DreamWaQ-BaseDwq-{_terrain}-PPO{_suffix}-v0",
             entry_point="isaaclab.envs:ManagerBasedRLEnv",
@@ -115,7 +115,7 @@ for _terrain, _envcls in (("Flat", "WaqOfficialFlatEnvCfg"), ("Rough", "WaqOffic
                 ),
             },
         )
-        # Waq: 같은 env, CENet 러너
+        # Waq: same env, CENet runner
         gym.register(
             id=f"DreamWaQ-Waq-Official-{_terrain}-PPO{_suffix}-v0",
             entry_point="isaaclab.envs:ManagerBasedRLEnv",
@@ -130,15 +130,15 @@ for _terrain, _envcls in (("Flat", "WaqOfficialFlatEnvCfg"), ("Rough", "WaqOffic
 
 
 ##
-# 논문이 실제로 말한 oracle — 지형 높이맵을 보는 정책 (rough 전용).
+# The oracle the paper actually talks about — a policy that sees the terrain height map (rough only).
 #
-# 논문 Fig.3 캡션: "The oracle policy has access to the height map measurement of the robot's
+# Paper Fig.3 caption: "The oracle policy has access to the height map measurement of the robot's
 # surroundings", §III-B: "despite walking without exteroception, DreamWaQ performs almost as well
 # as the oracle policy that has direct access to the surrounding terrain's height map."
 #
-# 위의 OracleDwq 는 *속도* 오라클이라 논문이 아무 주장도 하지 않은 축이다. 이 arm 이 있어야
-# "눈먼 Waq 가 지형을 보는 정책에 근접하는가" 라는 논문의 주장을 시험할 수 있다.
-# flat 은 지형 정보가 없으므로 rough 만 등록한다.
+# OracleDwq above is a *velocity* oracle, an axis the paper makes no claim about. This arm is needed
+# to test the paper's claim "does the blind Waq approach a policy that sees the terrain?".
+# Flat has no terrain information, so only rough is registered.
 ##
 for _suffix, _envsfx in (("", ""), ("-Play", "_PLAY")):
     gym.register(

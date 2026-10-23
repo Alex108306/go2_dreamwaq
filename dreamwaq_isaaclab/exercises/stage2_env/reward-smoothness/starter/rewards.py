@@ -144,12 +144,12 @@ class action_smoothness_l2(ManagerTermBase):
 
     def __call__(self, env: ManagerBasedRLEnv) -> torch.Tensor:
         # ── TODO(reward-smoothness) ─ level L2 ─────────────────────────────
-        # 액션의 저크(2차 차분)를 계산하고 t-2 버퍼를 갱신한다
-        #   hint: 저크 = a_t - 2*a_{t-1} + a_{t-2} 다. 2차 유한차분이다
-        #   hint: IsaacLab 의 action_manager 는 t 와 t-1 만 준다. t-2 는 self.prev_prev_action 으로 직접 들고 있어야 한다
-        #   hint: 이번 호출의 prev_action 이 다음 호출의 t-2 가 된다. 반환 전에 갱신한다
-        #   hint: 그냥 대입하면 같은 텐서를 참조하게 된다. .clone() 이 필요한 이유를 생각해 본다
-        #   hint: 보상은 env 마다 스칼라 하나여야 한다 — 12개 관절의 저크를 제곱해 dim=1 로 합한다
-        # 통과 기준은 이 실습 폴더의 README.md 를 본다.
+        # Compute the action jerk (second-order difference) and update the t-2 buffer
+        #   hint: Jerk = a_t - 2*a_{t-1} + a_{t-2}. It is a second-order finite difference
+        #   hint: IsaacLab's action_manager only gives t and t-1. You must hold t-2 yourself in self.prev_prev_action
+        #   hint: This call's prev_action becomes the next call's t-2. Update it before returning
+        #   hint: Plain assignment makes it reference the same tensor. Think about why .clone() is needed
+        #   hint: The reward must be one scalar per env — square the jerk of the 12 joints and sum with dim=1
+        # For the pass criteria, see README.md in this exercise folder.
         raise NotImplementedError("TODO(reward-smoothness)")
         # ─────────────────────────────────────────────────────────────────────

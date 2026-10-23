@@ -480,14 +480,14 @@ class DreamWaQEnv(DirectRLEnv):
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
         # ── TODO(direct-dones) ─ level L2 ─────────────────────────────
-        # 종료 조건 두 가지를 만든다 — 시간 초과와 몸통 접촉
-        #   hint: time_out 은 episode_length_buf 가 max_episode_length - 1 이상인 env 다 (스텝 인덱스는 0부터 센다)
-        #   hint: net_forces_w_history 는 (envs, history=3, bodies, 3) 이다. .torch 로 텐서를 얻는다
-        #   hint: self._termination_contact_ids 로 몸통(base) 바디만 골라낸다
-        #   hint: 축을 순서대로 줄인다: 힘 벡터 norm(dim=-1) → history 최대값 max(dim=1)[0] → 임계값 비교 → 바디 any(dim=1)
-        #   hint: history 는 평균이 아니라 최대를 쓴다. 3 프레임 중 한 번이라도 부딪혔으면 넘어진 것이다
-        #   hint: 임계값은 self.cfg.termination_contact_force (1.0 N) 다 — 원본 legged_gym 과 같다
-        # 통과 기준은 이 실습 폴더의 README.md 를 본다.
+        # Build the two termination conditions — timeout and base contact
+        #   hint: time_out is the envs whose episode_length_buf is >= max_episode_length - 1 (step indices count from 0)
+        #   hint: net_forces_w_history is (envs, history=3, bodies, 3). Get the tensor with .torch
+        #   hint: Pick out only the base body with self._termination_contact_ids
+        #   hint: Reduce the axes in order: force-vector norm(dim=-1) → history max max(dim=1)[0] → threshold comparison → bodies any(dim=1)
+        #   hint: Use the max over history, not the mean. If it hit even once in the 3 frames, it fell
+        #   hint: The threshold is self.cfg.termination_contact_force (1.0 N) — same as the original legged_gym
+        # For the pass criteria, see README.md in this exercise folder.
         raise NotImplementedError("TODO(direct-dones)")
         # ─────────────────────────────────────────────────────────────────────
 

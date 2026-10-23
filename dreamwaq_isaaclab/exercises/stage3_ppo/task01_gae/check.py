@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""빠른 검증 — ppo-gae.  (Isaac Sim 불필요, ~1초)
+"""Fast check — ppo-gae.  (no Isaac Sim needed, ~1 s)
 
     python check.py                 # starter.py
     python check.py --solution      # ../ppo.py
@@ -21,7 +21,7 @@ STARTER = HERE / "starter.py"
 
 def load(path: Path):
     if not path.exists():
-        raise SystemExit(f"파일이 없다: {path}\n  make_exercise.py --id ppo-gae 로 생성한다")
+        raise SystemExit(f"File not found: {path}\n  generate it with make_exercise.py --id ppo-gae")
     spec = importlib.util.spec_from_file_location(f"_ppo_{path.parent.name}", path)
     mod = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = mod
@@ -30,7 +30,7 @@ def load(path: Path):
 
 
 def reference_gae(rewards, values, dones, last_value, gamma=0.99, lam=0.95):
-    """검사기 자체의 독립 구현 — 학습자 코드와 대조한다."""
+    """The checker's own independent implementation — compared against the learner's code."""
     T = rewards.shape[0]
     adv = torch.zeros_like(rewards)
     acc = torch.zeros_like(last_value)
@@ -49,7 +49,7 @@ def main() -> int:
     args = ap.parse_args()
 
     path = SOLUTION if args.solution else STARTER
-    print(f"검사 대상: {path.relative_to(REPO_ROOT)}\n")
+    print(f"Checking: {path.relative_to(REPO_ROOT)}\n")
     gae = load(path).compute_gae
 
     failures: list[str] = []
@@ -70,57 +70,57 @@ def main() -> int:
     try:
         ret, adv = gae(rewards, values, dones, last_value)
     except NotImplementedError:
-        print("  아직 TODO(ppo-gae) 가 비어 있다. starter.py 를 채운다.")
+        print("  TODO(ppo-gae) is still empty. Fill in starter.py.")
         return 1
 
-    check("1. 반환 shape 이 (T, N) 두 개", ret.shape == (T, N) and adv.shape == (T, N),
+    check("1. returns two tensors of shape (T, N)", ret.shape == (T, N) and adv.shape == (T, N),
           f"returns={tuple(ret.shape)} adv={tuple(adv.shape)}")
 
     check("2. returns == advantages + values", torch.allclose(ret, adv + values, atol=1e-6))
 
-    # 독립 구현과 대조
+    # Compare against the independent implementation
     ref_ret, ref_adv = reference_gae(rewards, values, dones, last_value)
-    check("3. 독립 구현과 값이 일치", torch.allclose(adv, ref_adv, atol=1e-5),
-          f"최대 오차 {(adv - ref_adv).abs().max():.2e}")
+    check("3. values match the independent implementation", torch.allclose(adv, ref_adv, atol=1e-5),
+          f"max error {(adv - ref_adv).abs().max():.2e}")
 
-    # lam=0 이면 1-step TD 오차와 정확히 같아야 한다.
+    # With lam=0 it must equal the 1-step TD error exactly.
     _, adv0 = gae(rewards, values, dones, last_value, gamma=0.99, lam=0.0)
     nxt = torch.cat([values[1:], last_value.unsqueeze(0)], dim=0)
     td = rewards + 0.99 * nxt - values
-    check("4. lam=0 이면 1-step TD 오차와 같다", torch.allclose(adv0, td, atol=1e-5),
-          f"최대 오차 {(adv0 - td).abs().max():.2e}")
+    check("4. with lam=0 it equals the 1-step TD error", torch.allclose(adv0, td, atol=1e-5),
+          f"max error {(adv0 - td).abs().max():.2e}")
 
-    # gamma=lam=1, done 없음 -> 어드밴티지는 미래 보상 합 - V(s_t)
+    # gamma=lam=1, no dones -> advantage is the sum of future rewards - V(s_t)
     _, adv1 = gae(rewards, values, dones, last_value, gamma=1.0, lam=1.0)
     mc = torch.zeros_like(rewards)
     for t in range(T):
         mc[t] = rewards[t:].sum(0) + last_value - values[t]
-    check("5. gamma=lam=1 이면 몬테카를로와 같다", torch.allclose(adv1, mc, atol=1e-4),
-          f"최대 오차 {(adv1 - mc).abs().max():.2e}")
+    check("5. with gamma=lam=1 it equals Monte Carlo", torch.allclose(adv1, mc, atol=1e-4),
+          f"max error {(adv1 - mc).abs().max():.2e}")
 
-    # done 이 부트스트랩을 끊는가 — 이 실습의 핵심 함정
+    # Does done cut the bootstrap — the key trap of this exercise
     d = torch.zeros(T, N)
     d[3] = 1.0
     _, adv_d = gae(rewards, values, d, last_value)
     _, ref_d = reference_gae(rewards, values, d, last_value)
-    check("6. done 스텝에서 부트스트랩을 끊는다", torch.allclose(adv_d, ref_d, atol=1e-5),
-          f"최대 오차 {(adv_d - ref_d).abs().max():.2e}")
+    check("6. cuts the bootstrap at done steps", torch.allclose(adv_d, ref_d, atol=1e-5),
+          f"max error {(adv_d - ref_d).abs().max():.2e}")
 
-    # done 직전 스텝의 어드밴티지가 done 여부에 따라 달라져야 한다
-    check("7. done 이 실제로 결과를 바꾼다", not torch.allclose(adv_d[3], adv[3], atol=1e-6),
-          "done=1 인데 값이 그대로다 — (1 - done) 을 곱하지 않았다")
+    # The advantage of the step right before done must change depending on done
+    check("7. done actually changes the result", not torch.allclose(adv_d[3], adv[3], atol=1e-6),
+          "done=1 but the value is unchanged — (1 - done) wasn't multiplied in")
 
-    # 마지막 스텝은 last_value 로 부트스트랩한다
+    # The last step bootstraps with last_value
     other = last_value + 10.0
     _, adv_o = gae(rewards, values, dones, other)
-    check("8. 마지막 스텝이 last_value 를 쓴다", not torch.allclose(adv_o[-1], adv[-1], atol=1e-6),
-          "last_value 를 바꿔도 마지막 어드밴티지가 그대로다")
+    check("8. the last step uses last_value", not torch.allclose(adv_o[-1], adv[-1], atol=1e-6),
+          "changing last_value leaves the last advantage unchanged")
 
     print()
     if failures:
-        print(f"\033[1;31m{len(failures)}개 실패\033[0m: {', '.join(failures)}")
+        print(f"\033[1;31m{len(failures)} failed\033[0m: {', '.join(failures)}")
         return 1
-    print("\033[1;32m전부 통과.\033[0m 이어서 task02_ppo_update 로 간다.")
+    print("\033[1;32mAll passed.\033[0m Continue with task02_ppo_update.")
     return 0
 
 

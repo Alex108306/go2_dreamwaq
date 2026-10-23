@@ -1,52 +1,52 @@
-# reward-joint-power — 관절 파워 페널티  `L1 · FILL`
+# reward-joint-power — Joint power penalty  `L1 · FILL`
 
-## 목표
+## Goal
 
-로봇이 **에너지를 낭비하지 않게** 만드는 항.
+A term that keeps the robot **from wasting energy**.
 
 ```
 reward = sum_j |tau_j| * |theta_dot_j|
 ```
 
-논문 Table I 의 **Joint power**, 가중치 `−2×10⁻⁵`.
+**Joint power** in Table I of the paper, weight `−2×10⁻⁵`.
 
-## 채울 곳
+## What to fill in
 
-`starter/rewards.py` 의 `TODO(reward-joint-power)` — `joint_power_l1` 본문.
+`TODO(reward-joint-power)` in `starter/rewards.py` — the body of `joint_power_l1`.
 
-| 읽을 것 | 뜻 |
+| What to read | Meaning |
 |---|---|
-| `asset.data.applied_torque` | 실제로 관절에 가해진 토크 |
-| `asset.data.joint_vel` | 관절 각속도 |
-| `asset_cfg.joint_ids` | 대상 관절 (전체가 아닐 수 있다) |
+| `asset.data.applied_torque` | The torque actually applied to the joints |
+| `asset.data.joint_vel` | Joint angular velocity |
+| `asset_cfg.joint_ids` | Target joints (may not be all of them) |
 
-둘 다 **절댓값**을 취한다 — 파워를 "소비량"으로 보므로 부호는 의미가 없다.
+Take the **absolute value** of both — power is treated as "consumption", so the sign is meaningless.
 
-## 검증
+## Checks
 
 ```bash
 python check.py
 ```
 
-| # | 통과 기준 |
+| # | Pass criterion |
 |:---:|---|
-| 1 | 반환이 `(num_envs,)` |
-| 2 | 토크=1, 각속도=1, 관절 12개 → `12` |
-| 3 | 토크 0 이면 0 |
-| 4 | **각속도 0 이면 0** — 정지 유지 토크는 이 항으로 벌하지 않는다 |
-| 5 | **부호와 무관** (절댓값을 썼다) |
-| 6 | `asset_cfg.joint_ids` 존중 |
+| 1 | Returns `(num_envs,)` |
+| 2 | torque=1, angular velocity=1, 12 joints → `12` |
+| 3 | 0 if torque is 0 |
+| 4 | **0 if angular velocity is 0** — holding torque at standstill isn't penalized by this term |
+| 5 | **Sign-independent** (absolute values used) |
+| 6 | Respects `asset_cfg.joint_ids` |
 
-## 왜 이 항이 있는가
+## Why this term exists
 
-논문 §II-B-4:
+Paper §II-B-4:
 
 > The complex reward function for learning a locomotion policy usually includes a motor power
 > minimization term.
 
-4번이 흥미롭다 — 각속도가 0이면 아무리 큰 토크를 써도 페널티가 0이다. **가만히 버티는 것은
-이 항으로 벌하지 않는다.** 그래서 다음 실습의 `power_distribution` 이 따로 필요해진다.
+Number 4 is interesting — if angular velocity is 0, the penalty is 0 no matter how large the torque. **Holding still under load
+isn't penalized by this term.** That's why the next exercise's `power_distribution` is needed separately.
 
-## 다음
+## Next
 
-[`reward-power-distribution`](../reward-power-distribution/) — 총량이 아니라 **불균형**을 벌하는 항.
+[`reward-power-distribution`](../reward-power-distribution/) — a term that penalizes **imbalance**, not the total.

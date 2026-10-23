@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""빠른 검증 — stage5-summary.
+"""Fast check — stage5-summary.
 
-합성 로그만 쓴다. 배포 자산도 Isaac Sim 도 필요 없다.
+Uses only synthetic logs. Needs neither the distributed assets nor Isaac Sim.
 
-    python check.py                 # starter.py 를 검사
-    python check.py --solution      # 완성본을 검사 (검사기 자체를 점검할 때)
+    python check.py                 # check starter.py
+    python check.py --solution      # check the finished version (to test the checker itself)
 """
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ W = 1.5  # TRACK_WEIGHT
 
 def load_module(path: Path):
     if not path.exists():
-        raise SystemExit(f"파일이 없다: {path}\n  exercises/tools/make_exercise.py --id stage5-summary 로 생성한다")
+        raise SystemExit(f"File not found: {path}\n  generate it with exercises/tools/make_exercise.py --id stage5-summary")
     spec = importlib.util.spec_from_file_location(f"_s5_{path.stem}", path)
     mod = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = mod
@@ -33,11 +33,11 @@ def load_module(path: Path):
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--solution", action="store_true", help="완성본을 검사한다")
+    ap.add_argument("--solution", action="store_true", help="check the finished version")
     args = ap.parse_args()
 
     path = SOLUTION if args.solution else STARTER
-    print(f"검사 대상: {path.relative_to(REPO_ROOT)}\n")
+    print(f"Checking: {path.relative_to(REPO_ROOT)}\n")
     summarize = load_module(path).summarize
 
     failures: list[str] = []
@@ -51,9 +51,9 @@ def main() -> int:
     def approx(a: float, b: float, tol: float = 1e-9) -> bool:
         return abs(a - b) <= tol * max(1.0, abs(a), abs(b))
 
-    # 마지막 3개가 각각 0.4 / 0.5 / 0.6 (underlying) 이 되도록 만든 로그.
+    # Logs built so the last 3 are 0.4 / 0.5 / 0.6 (underlying) respectively.
     flat3 = {
-        "Base": [9.9, 0.3 * W, 0.4 * W, 0.5 * W],   # 마지막 3개 평균 = 0.4
+        "Base": [9.9, 0.3 * W, 0.4 * W, 0.5 * W],   # mean of the last 3 = 0.4
         "Waq": [9.9, 0.4 * W, 0.5 * W, 0.6 * W],    # = 0.5
         "Oracle": [9.9, 0.5 * W, 0.6 * W, 0.7 * W],  # = 0.6
     }
@@ -61,72 +61,72 @@ def main() -> int:
     try:
         r = summarize(flat3, last_k=3)
     except NotImplementedError:
-        print("  아직 TODO(stage5-summary) 가 비어 있다. starter.py 를 채운다.")
+        print("  TODO(stage5-summary) is still empty. Fill in starter.py.")
         return 1
 
-    # --- 1. 가중치를 되돌린다 ---------------------------------------------------------
-    check("1. underlying = 로그값 / 1.5", approx(r.get("Base", 0), 0.4),
-          f"Base={r.get('Base')} (기대 0.4). 가중치로 나누지 않았을 수 있다")
-    check("1. 세 config 모두 계산된다",
+    # --- 1. Divide the weight back out ---------------------------------------------------------
+    check("1. underlying = log value / 1.5", approx(r.get("Base", 0), 0.4),
+          f"Base={r.get('Base')} (expected 0.4). You may not have divided by the weight")
+    check("1. all three configs are computed",
           approx(r.get("Waq", 0), 0.5) and approx(r.get("Oracle", 0), 0.6),
           f"Waq={r.get('Waq')}, Oracle={r.get('Oracle')}")
 
-    # --- 2. 마지막 last_k 개의 평균이다 (마지막 한 점이 아니다) ----------------------------
+    # --- 2. It's the mean of the last last_k (not the last single point) ----------------------------
     spike = {"Base": [0.4 * W, 0.4 * W, 0.4 * W, 0.4 * W, 9.0 * W]}
     r2 = summarize(spike, last_k=3)
-    check("2. 최종값은 마지막 last_k 개 평균이다",
+    check("2. the final value is the mean of the last last_k",
           approx(r2["Base"], (0.4 + 0.4 + 9.0) / 3),
-          f"{r2['Base']:.4f} — 마지막 한 점만 봤거나 전체 평균을 냈다")
+          f"{r2['Base']:.4f} — you looked at only the last point or took the mean over everything")
 
-    # --- 3. 두 델타 -----------------------------------------------------------------
+    # --- 3. The two deltas -----------------------------------------------------------------
     check("3. Waq-Base = Waq − Base", approx(r["Waq-Base"], 0.1), f"{r.get('Waq-Base')}")
     check("3. Oracle-Waq = Oracle − Waq", approx(r["Oracle-Waq"], 0.1), f"{r.get('Oracle-Waq')}")
 
-    # --- 4. 델타 부호가 방향을 담는다 -----------------------------------------------------
-    # CENet 이 오히려 나쁠 수도 있다 — 이 프로젝트의 이전 런(logs/_archive_3000it_stairheavy)이
-    # 실제로 Waq-Base = -0.0166 이었다. 부호를 지우면 그 사실을 못 본다.
+    # --- 4. The delta's sign carries the direction -----------------------------------------------------
+    # CENet can actually be worse — this project's earlier run (logs/_archive_3000it_stairheavy)
+    # actually had Waq-Base = -0.0166. Erasing the sign hides that fact.
     worse = {"Base": [0.6 * W] * 3, "Waq": [0.4 * W] * 3, "Oracle": [0.7 * W] * 3}
     r3 = summarize(worse, last_k=3)
-    check("4. Waq 가 Base 보다 나쁘면 Waq-Base 가 음수",
-          r3["Waq-Base"] < 0, f"{r3['Waq-Base']:+.3f} — abs() 를 쓰면 방향이 사라진다")
+    check("4. if Waq is worse than Base, Waq-Base is negative",
+          r3["Waq-Base"] < 0, f"{r3['Waq-Base']:+.3f} — using abs() loses the direction")
 
-    # --- 5. 빠진 run 을 0 으로 채우지 않는다 ------------------------------------------------
+    # --- 5. Don't fill missing runs with 0 ------------------------------------------------
     partial = {"Base": [0.4 * W] * 3}
     r4 = summarize(partial, last_k=3)
-    check("5. 없는 config 는 키 자체가 없다 (0.0 으로 채우지 않는다)",
+    check("5. missing configs have no key at all (not filled with 0.0)",
           "Waq" not in r4 and "Oracle" not in r4, f"{sorted(r4)}")
-    check("5. 짝이 없으면 델타도 넣지 않는다",
+    check("5. no pair, no delta",
           "Waq-Base" not in r4 and "Oracle-Waq" not in r4, f"{sorted(r4)}")
 
-    # --- 6. 빈 리스트도 '없음' 으로 다룬다 ----------------------------------------------------
+    # --- 6. Empty lists are also treated as 'missing' ----------------------------------------------------
     r5 = summarize({"Base": [0.4 * W] * 3, "Waq": [], "Oracle": [0.6 * W] * 3}, last_k=3)
-    check("6. 빈 리스트는 없는 것으로 친다",
+    check("6. empty lists count as missing",
           "Waq" not in r5 and "Base" in r5 and "Oracle" in r5, f"{sorted(r5)}")
-    check("6. Waq 가 없으면 두 델타 모두 없다",
+    check("6. without Waq, neither delta exists",
           "Waq-Base" not in r5 and "Oracle-Waq" not in r5, f"{sorted(r5)}")
 
-    # --- 7. 로그가 last_k 개보다 적어도 동작한다 ------------------------------------------
+    # --- 7. Works even with fewer than last_k log entries ------------------------------------------
     r6 = summarize({"Base": [0.45 * W]}, last_k=3)
-    check("7. 로그가 1개뿐이어도 그 값으로 계산한다", approx(r6["Base"], 0.45), f"{r6.get('Base')}")
+    check("7. computes with that value even with only 1 log entry", approx(r6["Base"], 0.45), f"{r6.get('Base')}")
 
-    # --- 7b. 기본 last_k 가 충분히 크다 ------------------------------------------------
-    # 이 지표는 iteration 마다 sd~0.03 으로 출렁인다. 기본값이 작으면 노이즈가 차이보다 커진다
-    # (배포 자산의 flat 은 last-3 이 -0.012, last-400 이 +0.0007 로 부호가 뒤집힌다).
-    long_run = [0.9 * W] * 2700 + [0.1 * W] * 300   # 앞 2700 은 0.9, 뒤 300 은 0.1
+    # --- 7b. The default last_k is large enough ------------------------------------------------
+    # This metric fluctuates with sd~0.03 per iteration. With a small default, the noise exceeds the difference
+    # (in the distributed assets' flat, last-3 gives -0.012 and last-400 gives +0.0007 — the sign flips).
+    long_run = [0.9 * W] * 2700 + [0.1 * W] * 300   # first 2700 are 0.9, last 300 are 0.1
     r7 = summarize({"Base": long_run})
-    check("7b. 기본 last_k 가 100 이상이다 (몇 점만 쓰면 노이즈에 뒤집힌다)",
-          r7["Base"] < 0.5, f"기본값 평균={r7['Base']:.3f} — 뒤 300 점(0.1)만 보면 0.1 근처여야 한다")
+    check("7b. the default last_k is 100 or more (using only a few points gets flipped by noise)",
+          r7["Base"] < 0.5, f"default mean={r7['Base']:.3f} — looking only at the last 300 points (0.1) it should be near 0.1")
 
-    # --- 8. weight / last_k 를 인자로 바꿀 수 있다 ------------------------------------------
+    # --- 8. weight / last_k can be changed via arguments ------------------------------------------
     r7 = summarize({"Base": [1.0, 3.0]}, weight=1.0, last_k=1)
-    check("8. weight 와 last_k 인자가 실제로 반영된다", approx(r7["Base"], 3.0),
-          f"{r7.get('Base')} (기대 3.0) — 상수를 하드코딩했을 수 있다")
+    check("8. the weight and last_k arguments are actually applied", approx(r7["Base"], 3.0),
+          f"{r7.get('Base')} (expected 3.0) — you may have hard-coded a constant")
 
     print()
     if failures:
-        print(f"\033[1;31m{len(failures)}개 실패\033[0m: {', '.join(failures)}")
+        print(f"\033[1;31m{len(failures)} failed\033[0m: {', '.join(failures)}")
         return 1
-    print("\033[1;32m전부 통과.\033[0m 이어서 task03_interpret 로 간다.")
+    print("\033[1;32mAll passed.\033[0m Continue with task03_interpret.")
     return 0
 
 

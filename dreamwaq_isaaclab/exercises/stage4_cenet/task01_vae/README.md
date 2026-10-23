@@ -1,198 +1,198 @@
-# task01_vae — 순수 VAE  `L3 · DESIGN`
+# task01_vae — Plain VAE  `L3 · DESIGN`
 
 **Stage 4 · CENet (VAE)**
 
-## 목표
+## Goal
 
-`ToyVAE` 클래스를 **통째로** 쓴다. 골격도, 시그니처도 주어지지 않는다 — 아래 API 명세만 있다.
+Write the `ToyVAE` class **in its entirety**. Neither a skeleton nor signatures are given — only the API spec below.
 
-여기서 쓴 네 조각(encode / reparameterize / decode / ELBO)이 다음 실습에서 그대로
-CENet 이 된다. 로봇도 Isaac Sim 도 없이, VAE 만 먼저 세우는 단계다.
+The four pieces written here (encode / reparameterize / decode / ELBO) become CENet as-is in the next exercise.
+This is the step of building just the VAE first, with no robot and no Isaac Sim.
 
-## toy 문제
+## The toy problem
 
-`make_toy_batch()` 는 **진짜 자유도가 2 뿐인데 8 차원으로 관측되는** 데이터를 만든다.
-2차원 잠재 벡터를 고정된 랜덤 행렬로 8차원에 펼치고 약간의 노이즈를 얹은 것이다.
+`make_toy_batch()` produces data whose **true degrees of freedom are only 2 but which is observed in 8 dims**.
+It spreads a 2-dim latent vector into 8 dims with a fixed random matrix and adds a little noise.
 
-DreamWaQ 로 치면 "지형의 진짜 상태는 몇 개 수로 요약되는데, 로봇은 225 차원 관측 이력만
-본다" 에 해당한다. VAE 가 할 일은 그 저차원 구조를 되찾는 것이다.
+In DreamWaQ terms, this corresponds to "the true state of the terrain is summarized by a few numbers, but the robot only sees a 225-dim observation
+history". The VAE's job is to recover that low-dimensional structure.
 
-## 채울 곳
+## What to fill in
 
 ```
 starter.py  →  TODO(vae-core)
 ```
 
-L3 라 TODO 가 **모듈 최상단**에 있다. `import` 하는 순간 `NotImplementedError` 가 난다.
-그 자리에 `ToyVAE` 클래스를 통째로 쓰면 된다.
+Since this is L3, the TODO is at **module top level**. The moment you `import` it, `NotImplementedError` is raised.
+Just write the whole `ToyVAE` class in its place.
 
-`make_toy_batch()` 와 `main()` 은 이미 주어져 있다. `main()` 이 여러분의 클래스를
-`ToyVAE()`, `net.loss(data)`, `net.parameters()` 로 쓰므로 **API 를 정확히 맞춰야 한다.**
+`make_toy_batch()` and `main()` are already given. `main()` uses your class as
+`ToyVAE()`, `net.loss(data)`, `net.parameters()`, so **you must match the API exactly.**
 
-## 요구 API
+## Required API
 
 ```python
 class ToyVAE(nn.Module):
     def __init__(self, input_dim=8, hidden_dim=32, latent_dim=2, beta=1.0)
-    def encode(self, x)            -> (mu, logvar)          # 각 (B, latent_dim)
+    def encode(self, x)            -> (mu, logvar)          # each (B, latent_dim)
     def reparameterize(self, mu, logvar) -> z               # (B, latent_dim)
     def decode(self, z)            -> x_hat                 # (B, input_dim)
     def forward(self, x)           -> (x_hat, mu, logvar, z)
-    def loss(self, x)              -> (total, recon, kl)    # 스칼라 텐서 3개
+    def loss(self, x)              -> (total, recon, kl)    # 3 scalar tensors
 ```
 
-규약 두 가지를 지킨다. **CENet 이 쓰는 규약과 같게 맞춰 둔 것이다.**
+Follow two conventions. **They are set to match the conventions CENet uses.**
 
-- `loss` 가 돌려주는 `kl` 에는 **`self.beta` 를 이미 곱해 둔다.** 따라서 `total = recon + kl`.
-- KL 은 **잠재 차원으로 평균내고, 배치로도 평균**낸다. `recon` 이 `nn.MSELoss()` —
-  즉 입력 차원당 평균이기 때문이다. **두 항의 리덕션 축을 맞추는 것**이 규약의 핵심이다
-  (왜 그런지는 아래 "β 가 하는 일" 절).
+- The `kl` returned by `loss` **already has `self.beta` multiplied in.** So `total = recon + kl`.
+- The KL is **averaged over latent dims, and also averaged over the batch**. That's because `recon` is `nn.MSELoss()` —
+  i.e. a mean per input dimension. **Matching the reduction axes of the two terms** is the core of the convention
+  (for why, see the "What β does" section below).
 
-## 검증
+## Checks
 
 ```bash
 cd exercises/stage4_cenet/task01_vae
-~/IsaacLab/_isaac_sim/python.sh check.py     # 빠른 검증 — Isaac Sim 불필요, 1초
-~/IsaacLab/_isaac_sim/python.sh starter.py   # 직접 학습시켜 본다 (~5초)
+~/IsaacLab/_isaac_sim/python.sh check.py     # fast check — no Isaac Sim needed, 1 s
+~/IsaacLab/_isaac_sim/python.sh starter.py   # train it yourself (~5 s)
 ```
 
-> 검사기는 순수 torch 지만 **번들 kit python 으로 돌린다.** 시스템 `python3` 에는 torch 가 없다.
+> The checker is pure torch but **is run with the bundled kit python.** The system `python3` doesn't have torch.
 
-통과 기준 (20개):
+Pass criteria (20):
 
-1. `encode` 가 `mu`, `logvar` 를 각각 `(B, latent_dim)` 으로 준다 — 같은 절반을 두 번 쓰지 않는다
+1. `encode` returns `mu`, `logvar`, each `(B, latent_dim)` — the same half isn't used twice
 2. `reparameterize`
-   - `logvar` 가 아주 작으면 `z ≈ mu` (즉 `std = exp(0.5 * logvar)`)
-   - 같은 인자로 두 번 부르면 **다른 표본**이 나온다
-   - `logvar = 0` 이면 표본의 표준편차가 대략 1
-   - `mu` 로 **gradient 가 흐른다** ← 이게 핵심이다
+   - with very small `logvar`, `z ≈ mu` (i.e. `std = exp(0.5 * logvar)`)
+   - calling twice with the same arguments gives **different samples**
+   - with `logvar = 0`, the sample standard deviation is about 1
+   - **gradient flows** to `mu` ← this is the key
 3. `decode` / `forward`
-   - shape 과 반환 개수
-   - **같은 `x` 로 `forward` 를 두 번 부르면 `x_hat` 이 달라진다** ← 표집이 `forward` 경로에
-     실제로 들어가 있어야 한다. `decode(mu)` 로 쓰면 shape 은 다 맞는데 여기서 걸린다
+   - shapes and number of return values
+   - **calling `forward` twice with the same `x` gives different `x_hat`** ← sampling must actually be
+     on the `forward` path. With `decode(mu)` all the shapes match but this catches it
 4. ELBO
    - `total == recon + kl`
-   - `mu = 0, logvar = 0` 이면 `kl == 0`
-   - `mu` 나 `logvar` 가 0 에서 멀어지면 `kl` 증가
-   - `kl` 이 잠재 차원으로 **평균**내져 있다 (`mu=1, logvar=0` → `kl == 0.5`).
-     검사기는 `latent_dim` 을 2 → 4 로 늘려도 값이 변하지 않는지로 판별한다
-5. `beta` 를 2배 하면 `kl` 이 정확히 2배
-6. `x_hat == x` 이면 `recon == 0`
-7. 200 step 학습으로 손실이 실제로 줄어든다
+   - `kl == 0` when `mu = 0, logvar = 0`
+   - `kl` increases as `mu` or `logvar` moves away from 0
+   - `kl` is **averaged** over latent dims (`mu=1, logvar=0` → `kl == 0.5`).
+     The checker tells by whether the value stays the same when `latent_dim` goes 2 → 4
+5. Doubling `beta` doubles `kl` exactly
+6. `recon == 0` if `x_hat == x`
+7. The loss actually decreases with 200 steps of training
 
-## 힌트
+## Hints
 
 <details>
-<summary>1단계 — 인코더가 분포를 낸다</summary>
+<summary>Step 1 — the encoder outputs a distribution</summary>
 
-보통의 오토인코더는 잠재 **벡터**를 낸다. VAE 는 잠재 **분포**를 낸다.
-그래서 인코더 출력이 `latent_dim * 2` 다 — 앞 절반이 `mu`, 뒤 절반이 `logvar`.
+An ordinary autoencoder outputs a latent **vector**. A VAE outputs a latent **distribution**.
+So the encoder output is `latent_dim * 2` — the first half is `mu`, the second half `logvar`.
 
-`torch.split` 이나 슬라이싱으로 가른다. 왜 `var` 가 아니라 `logvar` 인가?
-분산은 양수여야 하는데, 신경망 출력은 부호 제약을 걸기 어렵다.
-로그로 받으면 `exp` 가 알아서 양수로 만들어 준다.
+Split it with `torch.split` or slicing. Why `logvar` and not `var`?
+The variance must be positive, but it's hard to put a sign constraint on a network output.
+Taking it as a log lets `exp` make it positive automatically.
 </details>
 
 <details>
-<summary>2단계 — reparameterization trick</summary>
+<summary>Step 2 — reparameterization trick</summary>
 
-`z ~ N(mu, sigma²)` 에서 그냥 뽑으면 **미분할 수 없다.** 표집은 미분 가능한 연산이 아니다.
+Drawing directly from `z ~ N(mu, sigma²)` is **not differentiable.** Sampling isn't a differentiable operation.
 
-대신 이렇게 쓴다.
+Instead, write it like this.
 
 ```
 std = exp(0.5 * logvar)
-eps ~ N(0, I)            <- 무작위성은 전부 여기로 몰아낸다
-z   = mu + eps * std     <- mu, std 로는 gradient 가 그대로 흐른다
+eps ~ N(0, I)            <- push all the randomness here
+z   = mu + eps * std     <- gradient flows straight through mu and std
 ```
 
-`logvar` 가 아니라 `0.5 * logvar` 를 `exp` 하는 이유는 `logvar = log(σ²)` 이므로
-`σ = exp(0.5 · log σ²)` 이기 때문이다.
+The reason you `exp` `0.5 * logvar` rather than `logvar` is that `logvar = log(σ²)`,
+so `σ = exp(0.5 · log σ²)`.
 </details>
 
 <details>
-<summary>3단계 — ELBO</summary>
+<summary>Step 3 — ELBO</summary>
 
-두 항이다.
+Two terms.
 
-- **복원**: `x_hat` 이 `x` 와 얼마나 다른가 → MSE
-- **규제**: `q(z|x)` 가 `p(z) = N(0, I)` 에서 얼마나 벗어났는가 → KL
+- **Reconstruction**: how different `x_hat` is from `x` → MSE
+- **Regularization**: how far `q(z|x)` departs from `p(z) = N(0, I)` → KL
 
-대각 가우시안끼리의 KL 은 닫힌 형태가 있다.
+The KL between diagonal Gaussians has a closed form.
 
 ```
 KL(q || p) = -0.5 * sum_j ( 1 + logvar_j - mu_j² - exp(logvar_j) )
 ```
 
-교과서 형태는 `sum_j` (잠재 차원 합)이지만, 여기서는 **잠재 차원 평균**을 쓴다 —
-`recon` 이 `nn.MSELoss()` = 차원당 평균이라 축을 맞춘 것이다. 그 뒤 배치 평균,
-마지막에 `beta` 를 곱한다.
+The textbook form is `sum_j` (sum over latent dims), but here we use the **mean over latent dims** —
+matching the axis because `recon` is `nn.MSELoss()` = per-dimension mean. Then the batch mean,
+and finally multiply by `beta`.
 </details>
 
-## β 가 하는 일
+## What β does
 
-`beta` 를 키우면 규제가 세져 잠재 분포가 표준정규에 가까워진다.
-너무 세면 **posterior collapse** — 잠재 벡터가 입력과 무관해져 아무 정보도 담지 못한다.
-너무 약하면 그냥 오토인코더가 된다.
+Increasing `beta` strengthens the regularization and pulls the latent distribution toward the standard normal.
+Too strong and you get **posterior collapse** — the latent vector becomes independent of the input and carries no information.
+Too weak and it's just an autoencoder.
 
-`beta=1.0` 으로 한 번, `beta=10.0` 으로 한 번 돌려 `recon` 이 어떻게 달라지는지 직접 본다.
+Run it once with `beta=1.0` and once with `beta=10.0` and see for yourself how `recon` changes.
 
 ```bash
 ~/IsaacLab/_isaac_sim/python.sh starter.py                # beta = 1.0
 ~/IsaacLab/_isaac_sim/python.sh starter.py --beta 10.0
 ```
 
-### 무엇을 볼 것인가
+### What to look at
 
-| | `kl` (마지막) | `recon` (마지막) |
+| | `kl` (last) | `recon` (last) |
 |---|---|---|
 | `beta=1.0` | 0.59 | **0.48** |
 | `beta=10.0` | **0.003** | **1.77** |
 
-`beta=10` 에서 `kl` 이 0.003 으로 **바닥에 붙는다.** 규제만 보면 "잘 됐다" 처럼 보인다.
-그런데 `recon` 은 0.48 → 1.77 로 **올랐다.**
+At `beta=10`, `kl` **sticks to the floor** at 0.003. Looking at the regularization alone, it seems "it worked".
+But `recon` **went up** from 0.48 → 1.77.
 
-**`kl`→0 인데 `recon` 이 따라 내려오지 않는 것이 posterior collapse 의 신호다.**
-`q(z|x)` 가 입력과 무관하게 `N(0,I)` 로 주저앉아 잠재가 아무 정보도 나르지 않고,
-디코더는 잠재를 무시한 채 평균만 뱉는다. 잠재를 못 쓰니 복원이 나빠질 수밖에 없다.
-(`kl` 이 작으면서 `recon` 도 함께 작아진다면 그건 붕괴가 아니라 진짜로 잘 된 것이다.)
+**`kl`→0 without `recon` coming down with it is the signal of posterior collapse.**
+`q(z|x)` slumps to `N(0,I)` regardless of the input so the latent carries no information,
+and the decoder ignores the latent and just emits the mean. Unable to use the latent, the reconstruction can only get worse.
+(If `recon` gets small along with a small `kl`, that's not collapse — it actually worked.)
 
-**그리고 toy 의 `beta=10` 은 실효 β 로는 40 이다** (`D/L = 8/2 = 4`, 아래 표).
-옛 CENet 의 실효 β 45 와 사실상 같은 자리다. **방금 눈으로 본 것이 CENet 에서 일어난 일이다.**
+**And the toy's `beta=10` is an effective β of 40** (`D/L = 8/2 = 4`, table below).
+That's practically the same spot as the old CENet's effective β of 45. **What you just saw is what happened in CENet.**
 
-### 그런데 여러분이 쓴 `beta` 는 여러분이 생각한 `beta` 가 아니다
+### But the `beta` you wrote isn't the `beta` you think it is
 
-교과서 β-VAE 는 recon 도 KL 도 **합**(sum/sum)이다. 그 기준으로 환산하면 **실효 β** 는
-두 항의 리덕션 축에 따라 달라진다.
+In the textbook β-VAE both recon and KL are **sums** (sum/sum). Converted to that baseline, the **effective β**
+depends on the reduction axes of the two terms.
 
-| recon 축 | KL 축 | 실효 β |
+| recon axis | KL axis | effective β |
 |---|---|---|
-| D차원 평균 | L차원 **합** | **D · β** ← 축이 어긋난 경우 |
-| D차원 평균 | L차원 평균 | (D / L) · β ← 이 실습이 쓰는 규약 |
+| D-dim mean | L-dim **sum** | **D · β** ← mismatched axes |
+| D-dim mean | L-dim mean | (D / L) · β ← the convention this exercise uses |
 
-여기 toy 는 `D=8, L=2` 라 축을 맞추면 실효 β = 4·β 이고, 어긋나게 두면 8·β 다.
-차이가 2배뿐이라 toy 에서는 잘 티가 안 난다.
+Here the toy has `D=8, L=2`, so with matched axes the effective β = 4·β, and with mismatched axes it's 8·β.
+The difference is only 2×, so it's hard to notice in the toy.
 
-**CENet 에서는 티가 났다.** `D=45, L=16` 이라 축이 어긋난 옛 코드의 실효 β 는 **45·β**,
-`beta_limit=4` 까지 annealing 하면 **180** 이었다. 결과는 posterior collapse — 잠재 정보량
-0.02~0.14 nats, 사실상 0비트. 지금은 KL 을 차원 평균으로 바꿔 실효 β = (45/16)·β ≈ **2.81·β**
-로 내렸고, annealing 도 학습 경로에서 뺐다.
+**In CENet it was noticeable.** With `D=45, L=16`, the effective β of the old code with mismatched axes was **45·β**,
+and annealing up to `beta_limit=4` made it **180**. The result was posterior collapse — latent information content of
+0.02–0.14 nats, practically 0 bits. Now the KL has been changed to a per-dim mean, bringing the effective β down to (45/16)·β ≈ **2.81·β**,
+and annealing was removed from the training path as well.
 
-> **"논문 eq.7 의 β 는 상수다" 라고 쓰지 않는 이유.** 논문은 β 에 **수치도 스케줄도 주지
-> 않는다** ("constant" 라는 단어도 없다). "스케줄을 안 적었으니 상수" 는 **우리 독법**이지
-> 논문 문장이 아니다. 우리는 그 독법을 따라 상수로 구현했고, annealing 은 기본 off 인
-> 실험용 게이트(`DWQ_CENET_BETA_ANNEAL`) 뒤로 옮겨 두었다.
-> 어디까지가 논문이고 어디부터가 우리 선택인지는 [`cenet-loss`](../cenet-loss/) 의
-> "논문이 정한 것과 우리가 정한 것" 절에 표로 정리해 두었다.
+> **Why we don't write "β in paper eq.7 is constant".** The paper gives β **neither a number nor a
+> schedule** (the word "constant" doesn't appear either). "No schedule was written, so it's constant" is **our reading**,
+> not a sentence from the paper. We implemented it as a constant following that reading, and moved annealing behind an
+> experiment gate (`DWQ_CENET_BETA_ANNEAL`) that is off by default.
+> What is the paper's and what is our choice is tabulated in the
+> "What the paper fixes vs. what we chose" section of [`cenet-loss`](../cenet-loss/).
 
-> **"실효 β" 도 우리 용어다.** 논문에 없다. `recon` 을 합으로 환산했을 때 `KL_sum` 에
-> 붙는 계수, 즉 `vel` 항을 빼고 **recon : KL 만** 본 비다. 그래서 같은 학습을 두고도
-> 어느 단위로 적느냐에 따라 4·β 로도 8·β 로도 쓸 수 있다 — **수를 인용할 때는 단위를
-> 함께 말한다.**
+> **"Effective β" is also our term.** It isn't in the paper. It's the coefficient attached to `KL_sum` when `recon` is
+> converted to a sum, i.e. the ratio looking at **recon : KL only**, leaving out the `vel` term. So for the same training run
+> it can be written as 4·β or 8·β depending on which unit you use — **when quoting a number, state the unit
+> with it.**
 
-그래서 이 실습이 KL 을 **차원 평균**으로 못박는다. 값 자체보다 **두 항의 축을 맞춘다**는
-습관이 요점이다. 전말은 [`cenet-loss`](../cenet-loss/) 실습에서 다시 다룬다.
+That's why this exercise pins the KL to a **per-dim mean**. More than the value itself, the point is the habit of
+**matching the axes of the two terms**. The full story is covered again in the [`cenet-loss`](../cenet-loss/) exercise.
 
-## 다음
+## Next
 
-- [`cenet-forward`](../cenet-forward/) — 이 구조에 `est_vel` 가지를 붙여 진짜 CENet 으로 (L2)
+- [`cenet-forward`](../cenet-forward/) — attach an `est_vel` branch to this structure to make the real CENet (L2)

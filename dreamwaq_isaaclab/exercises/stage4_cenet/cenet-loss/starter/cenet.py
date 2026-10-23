@@ -105,14 +105,14 @@ class CENet(nn.Module):
         super().__init__()
         self.device = device
 
-        # 실험용 환경변수 게이트(DWQ_CENET_*)는 이 실습을 만들 때 걷어냈다 — 전부 기본 off 라
-        # 학습이 쓰는 수식은 달라지지 않는다. 게이트가 읽던 값들(free_bits / kl_reduction /
-        # beta_anneal / beta_limit)도 같이 지웠다: 남겨 두면 아래 TODO 에서 KL 을 어느 축으로
-        # 줄일지 정할 때 `kl_reduction == "sum"` 분기를 써야 하나 하고 헤매게 된다.
-        # 왜 그런 스위치가 프로덕션 소스에 있는지는 이 실습 폴더의 README.md 를 본다.
-        self.grad_clip = 1.0  # 이 파일에서 실제로 읽히는 유일한 설정값 — PPO 의 max_grad_norm 과 같은 예산
-        # 진단 주석이 가리키는 문턱값(차원당 KL 이 이 위면 '살아 있는' 잠재 차원).
-        # 진단 계산 자체를 아래에서 걷어냈으므로 이 실습에서는 읽는 곳이 없다.
+        # The experiment env-var gates (DWQ_CENET_*) were stripped when making this exercise — all are off by default, so
+        # the formulas used in training don't change. The values the gates read (free_bits / kl_reduction /
+        # beta_anneal / beta_limit) were removed too: if left in, when deciding which axis to reduce the KL over in the TODO below
+        # you'd wander around wondering whether to use a `kl_reduction == "sum"` branch.
+        # For why such switches exist in the production source, see README.md in this exercise folder.
+        self.grad_clip = 1.0  # The only setting actually read in this file — same budget as PPO's max_grad_norm
+        # The threshold the diagnostic comment refers to (a latent dim is 'alive' if its per-dim KL is above this).
+        # The diagnostic computation itself was stripped below, so nothing reads it in this exercise.
         self.kl_active_eps = 0.01
 
         self.encoder = nn.Sequential(
@@ -127,13 +127,13 @@ class CENet(nn.Module):
             nn.Linear(hidden_dim1, hidden_dim3), nn.ELU(),
             nn.Linear(hidden_dim3, output_dim),
         ]
-        # (실험용 디코더 게이트 삽입 지점 — 이 실습에서는 걷어냈다.)
+        # (Insertion point of the experimental decoder gate — stripped in this exercise.)
         self.decoder = nn.Sequential(*decoder_layers)
 
         print(f"{'CENet Structure':=^60}")
         print(f"Encoder MLP: {self.encoder}")
         print(f"Decoder MLP: {self.decoder}")
-        # (게이트 설정 진단 출력은 이 실습에서 걷어냈다.)
+        # (Gate-setting diagnostic output was stripped in this exercise.)
 
         self.num_mini_batches = num_mini_batches
         self.num_learning_epochs = num_learning_epochs
@@ -219,8 +219,8 @@ class CENet(nn.Module):
             col_norms = first_linear.weight.norm(dim=0)  # [latent_dim2]
             return float(col_norms[:3].mean().item()), float(col_norms[3:].mean().item())
 
-    # (잠재 차원별 KL 진단 도우미와 게이트용 KL 항은 이 실습에서 걷어냈다 —
-    #  둘 다 지금 채워야 할 KL 식을 그대로 담고 있어서 답안지가 된다.)
+    # (The per-latent-dim KL diagnostic helper and the gated KL term were stripped in this exercise —
+    #  both contain exactly the KL formula you must fill in now, so they would be an answer key.)
 
     def before_action(self, obs_history, true_vel):
         est_next_obs, est_vel, mu, logvar, context_vec = self.forward(obs_history)
@@ -251,20 +251,20 @@ class CENet(nn.Module):
             est_onext_batch, est_vel_batch, mu_batch, logvar_batch, _ = self.forward(obs_history_batch)
 
             # ── TODO(cenet-loss) ─ level L2 ─────────────────────────────
-            # CENet 의 세 손실 항(vel / recon / KL)과 총합을 완성한다
-            #   hint: vel_loss 는 est_vel 과 true_vel 의 MSE, recon_loss 는 est_onext 와 true_onext 의 MSE 다
-            #   hint: q(z|x)=N(mu, exp(logvar)) 와 p(z)=N(0, I) 사이의 KL 은 닫힌 형태다. std 가 아니라 logvar 를 받는다
-            #   hint: nn.MSELoss() 는 차원 평균이다. KL 도 같은 축으로 축약해야 한다. 그리고 total_loss.backward() 는 스칼라를 요구한다
-            #   hint: beta 가 곱해지는 것은 KL 항 뿐이다 (beta-VAE)
-            # 통과 기준은 이 실습 폴더의 README.md 를 본다.
+            # Complete CENet's three loss terms (vel / recon / KL) and their total
+            #   hint: vel_loss is the MSE of est_vel and true_vel; recon_loss is the MSE of est_onext and true_onext
+            #   hint: The KL between q(z|x)=N(mu, exp(logvar)) and p(z)=N(0, I) has a closed form. It takes logvar, not std
+            #   hint: nn.MSELoss() is a per-dimension mean. The KL must be reduced over the same axis. Also, total_loss.backward() requires a scalar
+            #   hint: Only the KL term is multiplied by beta (beta-VAE)
+            # For the pass criteria, see README.md in this exercise folder.
             raise NotImplementedError("TODO(cenet-loss)")
             # ─────────────────────────────────────────────────────────────────────
 
-            # (실험용 게이트 오버라이드는 이 실습에서 걷어냈다.)
+            # (The experimental gate override was stripped in this exercise.)
 
             self.optimizer.zero_grad()
             total_loss.backward()
-            # PPO 와 같은 예산(1.0)으로 CENet gradient 도 자른다.
+            # Clip the CENet gradient with the same budget as PPO (1.0).
             if self.grad_clip is not None:
                 torch.nn.utils.clip_grad_norm_(self.parameters(), self.grad_clip)
             self.optimizer.step()
@@ -283,8 +283,8 @@ class CENet(nn.Module):
             with torch.no_grad():
                 mean_mu_abs += mu_batch.abs().mean().item()
                 mean_sigma += (0.5 * logvar_batch).exp().mean().item()
-                # 잠재 차원별 KL 진단(kl_active_dims / kl_nats)은 이 실습에서 걷어냈다 —
-                # 그 계산이 곧 위에서 채워야 할 KL 식이기 때문이다. 프로덕션 소스에는 있다.
+                # The per-latent-dim KL diagnostic (kl_active_dims / kl_nats) was stripped in this exercise —
+                # that computation is exactly the KL formula you must fill in above. It exists in the production source.
 
         if total_loss is not None:
             # ReduceLROnPlateau does float(metrics); handing it a grad-carrying tensor keeps the
@@ -318,7 +318,7 @@ class CENet(nn.Module):
 
         self.storage.clear()
 
-        # (β annealing 은 실험용 게이트라 이 실습에서 걷어냈다. 논문 eq.7 은 β 에 스케줄을
-        #  주지 않는데, "그러니 상수" 는 논문 문장이 아니라 우리 독법이다 — README 를 본다.)
+        # (β annealing is an experiment gate, so it was stripped in this exercise. Paper eq.7 gives β no schedule,
+        #  and "therefore constant" is our reading, not a sentence from the paper — see the README.)
 
         return mean_total_loss, mean_vel_loss, mean_recon_loss, mean_kl_loss

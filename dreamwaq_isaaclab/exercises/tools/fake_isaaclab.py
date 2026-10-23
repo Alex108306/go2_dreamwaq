@@ -1,11 +1,11 @@
-"""Isaac Sim 없이 프로젝트 모듈을 import 하기 위한 최소 스텁.
+"""Minimal stub for importing project modules without Isaac Sim.
 
-`rewards.py` 같은 파일은 `isaaclab.*` 을 import 하지만, 실습이 검사하는 계산 자체는
-순수 torch 다. Isaac Sim 을 띄우면 25초가 걸리므로, import 만 통과시키는 가짜 모듈을
-`sys.modules` 에 심어 1초 만에 검사한다.
+Files like `rewards.py` import `isaaclab.*`, but the computation the exercises check is
+pure torch. Launching Isaac Sim takes 25 seconds, so we plant fake modules that only let the import
+pass into `sys.modules` and check in 1 second.
 
-이름을 하나씩 열거하지 않는다 — 어떤 속성 접근이든 더미 클래스를 돌려주므로,
-프로젝트가 새 심볼을 import 하기 시작해도 검사기를 고칠 필요가 없다.
+Names are not enumerated one by one — any attribute access returns a dummy class, so
+even if the project starts importing new symbols, the checkers don't need to change.
 
     from fake_isaaclab import install_stubs, load_module
 
@@ -20,13 +20,13 @@ import sys
 import types
 from pathlib import Path
 
-# 이 접두사로 시작하는 모듈은 전부 가짜로 만든다. 이름을 열거하지 않고 meta path finder 로
-# 가로채므로, 프로젝트가 새 isaaclab 서브모듈을 import 하기 시작해도 여기를 고칠 필요가 없다.
+# Every module starting with these prefixes is faked. Since we intercept with a meta path finder rather
+# than enumerating names, nothing here needs to change when the project starts importing a new isaaclab submodule.
 _STUB_PREFIXES = ("isaaclab", "isaacsim", "omni", "carb", "pxr", "usdrt")
 
 
 class _DummyMeta(type):
-    """클래스 레벨 속성 접근도 받아낸다 (예: RayCasterCfg.OffsetCfg)."""
+    """Also handles class-level attribute access (e.g. RayCasterCfg.OffsetCfg)."""
 
     def __getattr__(cls, name):
         if name.startswith("__"):
@@ -40,10 +40,10 @@ class _DummyMeta(type):
 
 
 class _Dummy(metaclass=_DummyMeta):
-    """무엇으로 쓰이든 죽지 않는 자리표시자 (기반 클래스, 타입 힌트, 데코레이터)."""
+    """A placeholder that never dies whatever it is used as (base class, type hint, decorator)."""
 
     def __init__(self, *args, **kwargs):
-        # ManagerTermBase 처럼 (cfg, env) 를 받는 기반 클래스로도 쓰인다.
+        # Also used as a base class that takes (cfg, env), like ManagerTermBase.
         self.cfg = kwargs.get("cfg", args[0] if args else None)
         self._env = kwargs.get("env", args[1] if len(args) > 1 else None)
 
@@ -59,27 +59,27 @@ class _Dummy(metaclass=_DummyMeta):
 
 
 class _AnyModule(types.ModuleType):
-    """어떤 속성을 물어도 더미를 돌려주는 모듈. __path__ 가 있어 패키지로도 동작한다."""
+    """A module that returns a dummy for any attribute requested. It has __path__ so it also works as a package."""
 
     def __init__(self, name: str):
         super().__init__(name)
-        self.__path__ = []  # 서브모듈 import 를 허용한다
+        self.__path__ = []  # allow submodule imports
 
     def __getattr__(self, name: str):
         if name.startswith("__"):
             raise AttributeError(name)
-        # 대문자로 시작하면 클래스 자리, 아니면 함수/값 자리로 본다.
+        # Names starting with an uppercase letter are treated as classes, otherwise as functions/values.
         value = _Dummy if name[:1].isupper() else _Dummy()
         setattr(self, name, value)
         return value
 
 
 class _StubFinder(importlib.abc.MetaPathFinder, importlib.abc.Loader):
-    """`isaaclab.*` 등을 요청하면 즉석에서 가짜 모듈을 만들어 준다."""
+    """Creates a fake module on the fly when `isaaclab.*` etc. is requested."""
 
     def find_spec(self, fullname, path=None, target=None):
         root = fullname.split(".")[0]
-        # 접두사 매칭 — isaaclab_physx, isaaclab_tasks, isaaclab_assets 등도 잡는다.
+        # Prefix matching — also catches isaaclab_physx, isaaclab_tasks, isaaclab_assets, etc.
         if not any(root.startswith(pfx) for pfx in _STUB_PREFIXES):
             return None
         return importlib.util.spec_from_loader(fullname, self, is_package=True)
@@ -95,10 +95,10 @@ _FINDER = _StubFinder()
 
 
 def install_stubs() -> None:
-    """`isaaclab.*` 스텁 로더를 sys.meta_path 에 심는다 (중복 설치하지 않는다)."""
+    """Install the `isaaclab.*` stub loader into sys.meta_path (without installing it twice)."""
     if not any(isinstance(f, _StubFinder) for f in sys.meta_path):
         sys.meta_path.insert(0, _FINDER)
-    # 이미 진짜가 로드돼 있으면 스텁이 가려지므로 걷어낸다.
+    # If the real one is already loaded the stub would be shadowed, so remove it.
     for name in list(sys.modules):
         root = name.split(".")[0]
         if any(root.startswith(p) for p in _STUB_PREFIXES) and not isinstance(sys.modules[name], _AnyModule):
@@ -106,18 +106,18 @@ def install_stubs() -> None:
 
 
 def load_module(path: Path, alias: str | None = None, extra_paths: tuple[Path, ...] = ()):
-    """임의 경로의 .py 를 import 한다 (sys.path 를 건드리지 않는다).
+    """Import a .py from an arbitrary path (without touching sys.path).
 
-    `from .sibling import X` 같은 상대 import 를 쓰는 파일도 불러올 수 있도록,
-    파일이 있는 디렉토리를 __path__ 로 갖는 가짜 부모 패키지를 만들어 붙인다.
+    So that files using relative imports like `from .sibling import X` can be loaded too,
+    a fake parent package whose __path__ is the file's directory is created and attached.
 
-    starter 는 형제 모듈 없이 혼자 생성되므로, 원본 소스 디렉토리를 `extra_paths` 로
-    넘기면 거기서도 형제를 찾는다.
+    A starter is generated alone without its sibling modules, so if you pass the original source directory as
+    `extra_paths`, siblings are looked up there as well.
     """
     if not path.exists():
         raise SystemExit(
-            f"파일이 없다: {path}\n"
-            f"  exercises/tools/make_exercise.py --all 로 starter 를 생성한다"
+            f"File not found: {path}\n"
+            f"  generate the starters with exercises/tools/make_exercise.py --all"
         )
     install_stubs()
 

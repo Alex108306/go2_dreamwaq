@@ -1,378 +1,378 @@
-# cenet-loss — CENet 손실 함수  `L2 · BUILD`
+# cenet-loss — CENet loss function  `L2 · BUILD`
 
 **Stage 4 · CENet (VAE)**
 
-## 목표
+## Goal
 
-CENet의 학습 신호를 직접 만든다. 세 항을 완성한다.
+Build CENet's training signal yourself. Complete the three terms.
 
-| 항 | 무엇을 재는가 |
+| Term | What it measures |
 |---|---|
-| `vel_loss` | 추정 속도 `est_vel(3)` 이 실제 base linear velocity 를 맞추는가 |
-| `recon_loss` | 잠재 표현으로 **다음 스텝 관측(45)** 을 복원할 수 있는가 |
-| `kl_loss` | 잠재 분포가 표준정규에서 얼마나 벗어났는가 (β-VAE 규제) |
+| `vel_loss` | Whether the estimated velocity `est_vel(3)` matches the actual base linear velocity |
+| `recon_loss` | Whether the **next step's observation (45)** can be reconstructed from the latent representation |
+| `kl_loss` | How far the latent distribution departs from the standard normal (β-VAE regularization) |
 
-이 세 항이 DreamWaQ의 핵심 아이디어다. 로봇은 지형을 직접 보지 못하지만,
-**과거 관측 이력만으로 "다음에 무슨 일이 일어날지"를 복원하도록 강제**하면
-그 잠재 벡터에 지형 정보가 스며든다. 이것이 implicit terrain imagination 이다.
+These three terms are the core idea of DreamWaQ. The robot can't see the terrain directly, but
+**if you force it to reconstruct "what happens next" from the past observation history alone**,
+terrain information seeps into that latent vector. This is implicit terrain imagination.
 
-## 채울 곳
+## What to fill in
 
 ```
-starter/cenet.py  →  CENet.update()  안의  TODO(cenet-loss)
+starter/cenet.py  →  TODO(cenet-loss)  inside  CENet.update()
 ```
 
-`self.forward()` 가 이미 넘겨준 값들:
+Values already passed in by `self.forward()`:
 
-| 변수 | shape | 의미 |
+| Variable | shape | Meaning |
 |---|---|---|
-| `est_vel_batch` | `(B, 3)` | 인코더가 추정한 base linear velocity |
-| `true_vel_batch` | `(B, 3)` | 실제 base linear velocity — 러너의 `true_vel_rms`(속도 전용 running mean/std 정규화기, `rsl_rl` 의 `EmpiricalNormalization`) 로 정규화된 값 |
-| `est_onext_batch` | `(B, 45)` | 디코더가 복원한 다음 스텝 관측 |
-| `true_onext_batch` | `(B, 45)` | 실제 다음 스텝 관측 — 러너의 `obs_rms`(base 관측 45 용 running mean/std 정규화기) 로 정규화된 값. 인코더 입력(정규화된 이력)과 스케일을 맞추기 위해서다 |
-| `mu_batch` | `(B, 16)` | 잠재 분포의 평균 |
-| `logvar_batch` | `(B, 16)` | 잠재 분포의 **로그 분산** |
+| `est_vel_batch` | `(B, 3)` | Base linear velocity estimated by the encoder |
+| `true_vel_batch` | `(B, 3)` | Actual base linear velocity — normalized by the runner's `true_vel_rms` (velocity-only running mean/std normalizer, `rsl_rl`'s `EmpiricalNormalization`) |
+| `est_onext_batch` | `(B, 45)` | Next-step observation reconstructed by the decoder |
+| `true_onext_batch` | `(B, 45)` | Actual next-step observation — normalized by the runner's `obs_rms` (running mean/std normalizer for the 45 base observations). This matches the scale of the encoder input (normalized history) |
+| `mu_batch` | `(B, 16)` | Mean of the latent distribution |
+| `logvar_batch` | `(B, 16)` | **Log variance** of the latent distribution |
 
-`self.beta` 는 KL 가중치다. 이 구현에서는 **상수다** — 논문 eq.7 이 β 에 스케줄을 주지 않으므로
-상수로 읽었고(이것은 인용이 아니라 우리 독법이다 — 아래 "논문이 정한 것과 우리가 정한 것"),
-예전에 학습 경로에 있던 `beta *= 1.01` annealing 은 **기본 off 인 게이트 뒤로 옮겼다**
-(아래 "리덕션 축" 절과 "실제 소스에는 스위치가 더 있다" 절을 본다). 이 실습의 starter 에는
-그 게이트가 없으므로 `self.beta` 는 처음부터 끝까지 같은 값이다.
+`self.beta` is the KL weight. In this implementation it **is a constant** — paper eq.7 gives β no schedule, so
+we read it as a constant (this is our reading, not a quote — see "What the paper fixes vs. what we chose" below),
+and the `beta *= 1.01` annealing that used to be on the training path **was moved behind a gate that is off by default**
+(see the "Reduction axis" section and the "The real source has more switches" section below). This exercise's starter
+doesn't have that gate, so `self.beta` stays the same value from start to finish.
 
-`total_loss` 까지 만들어야 한다. 아래 `total_loss.backward()` 가 그것을 쓴다.
+You must build `total_loss` as well. `total_loss.backward()` below uses it.
 
-## 검증
+## Checks
 
 ```bash
 cd exercises/stage4_cenet/cenet-loss
-~/IsaacLab/_isaac_sim/python.sh check.py   # 빠른 검증 — Isaac Sim 불필요, 1초
+~/IsaacLab/_isaac_sim/python.sh check.py   # fast check — no Isaac Sim needed, 1 s
 ```
 
-> 검사기는 순수 torch 지만 **번들 kit python 으로 돌린다.** 시스템 `python3` 에는 torch 가 없다.
+> The checker is pure torch but **is run with the bundled kit python.** The system `python3` doesn't have torch.
 
-통과 기준 (15개):
+Pass criteria (15):
 
-1. 세 항 모두 스칼라로 축약될 것 (`.item()` 이 동작해야 한다)
-2. `est_vel == true_vel` 이면 `vel_loss == 0`, `est_onext == true_onext` 면 `recon_loss == 0`
-3. `mu == 0, logvar == 0` (즉 q = p) 이면 `kl_loss == 0`
-4. `logvar` 를 키우거나 `mu` 를 0에서 멀어지게 하면 `kl_loss` 가 **증가**할 것.
-   그리고 **KL 과 recon 이 같은 축으로 축약될 것.** 검사기는 잠재 차원을 16 → 32 로,
-   관측 차원을 45 → 90 으로 늘려 보고 **두 값이 모두 변하지 않는지**로 판별한다 —
-   차원 수에 비례해 커지는 축약을 썼다면 여기서 잡힌다.
-   **어느 쪽으로 맞출지는 직접 정하고, 틀리면 검사기가 기대값과 함께 알려준다**
-5. `self.beta` 를 2배로 하면 `kl_loss` 가 **정확히 2배**가 될 것 (vel/recon 은 불변)
-6. `total_loss` 가 세 항의 합일 것. **`beta ≠ 1` 에서도** 성립할 것
-   (β 를 `total_loss` 쪽에만 곱하고 반환하는 `kl_loss` 에는 안 곱하면 β=1 에서만 맞는다)
-7. `total_loss.backward()` 후 encoder·decoder 양쪽에 gradient 가 흐를 것
+1. All three terms are reduced to scalars (`.item()` must work)
+2. `vel_loss == 0` if `est_vel == true_vel`, `recon_loss == 0` if `est_onext == true_onext`
+3. `kl_loss == 0` if `mu == 0, logvar == 0` (i.e. q = p)
+4. `kl_loss` **increases** when `logvar` grows or `mu` moves away from 0.
+   And **the KL and recon are reduced over the same axis.** The checker increases the latent dims 16 → 32
+   and the observation dims 45 → 90 and judges by **whether neither value changes** —
+   if you used a reduction that grows in proportion to the number of dims, it's caught here.
+   **Decide yourself which way to match them; if you're wrong, the checker tells you along with the expected value**
+5. Doubling `self.beta` makes `kl_loss` **exactly 2x** (vel/recon unchanged)
+6. `total_loss` is the sum of the three terms. It must hold **even when `beta ≠ 1`**
+   (if β is multiplied only on the `total_loss` side and not into the returned `kl_loss`, it's only right at β=1)
+7. After `total_loss.backward()`, gradient flows to both encoder and decoder
 
-## 힌트
+## Hints
 
 <details>
-<summary>1단계 — MSE 두 항</summary>
+<summary>Step 1 — the two MSE terms</summary>
 
-`nn.MSELoss()` 인스턴스는 `loss(pred, target)` 로 부르면 평균 제곱오차 스칼라를 준다.
-`vel_loss` 와 `recon_loss` 는 각각 한 줄이다.
+An `nn.MSELoss()` instance, called as `loss(pred, target)`, gives a mean squared error scalar.
+`vel_loss` and `recon_loss` are one line each.
 </details>
 
 <details>
-<summary>2단계 — KL 의 닫힌 형태</summary>
+<summary>Step 2 — the closed form of the KL</summary>
 
-대각 가우시안 `q = N(mu, sigma^2)` 와 `p = N(0, I)` 사이의 KL은
+The KL between the diagonal Gaussian `q = N(mu, sigma^2)` and `p = N(0, I)` is
 
 ```
 KL(q || p) = -0.5 * sum_j ( 1 + log(sigma_j^2) - mu_j^2 - sigma_j^2 )
 ```
 
-여기서 `log(sigma^2)` 이 바로 `logvar` 이고 `sigma^2 = logvar.exp()` 이다.
+Here `log(sigma^2)` is exactly `logvar`, and `sigma^2 = logvar.exp()`.
 
-교과서 공식은 `sum_j` — 잠재 차원 **합**이다. 그런데 **바로 위 `recon_loss` 는
-`nn.MSELoss()`, 즉 45차원 평균**이다. 두 항이 서로 다른 축으로 축약되면 어떻게 되는지는
-다음 절이 실측으로 보여준다. 어느 쪽으로 갈지는 직접 정하고, `check.py` 에게 물어본다.
-(배치 축은 그와 별개로 한 번 더 줄여야 한다 — `backward()` 는 스칼라를 요구한다.)
+The textbook formula is `sum_j` — a **sum** over latent dims. But **`recon_loss` right above is
+`nn.MSELoss()`, i.e. a 45-dim mean**. The next section shows from measurements what happens when the two terms
+are reduced over different axes. Decide yourself which way to go, and ask `check.py`.
+(The batch axis must be reduced once more, separately — `backward()` requires a scalar.)
 </details>
 
 <details>
-<summary>3단계 — beta 를 어디에 곱하는가</summary>
+<summary>Step 3 — where to multiply beta</summary>
 
-β-VAE 는 재구성과 규제의 균형을 β 로 조절한다. β 는 **KL 항에만** 곱한다.
+A β-VAE balances reconstruction and regularization with β. β is multiplied **only into the KL term**.
 </details>
 
-## 리덕션 축 — 이 구현이 한 번 무너졌던 지점
+## Reduction axis — where this implementation once collapsed
 
-수식이 논문과 같아도 **두 항을 어떤 축으로 축약하느냐**에 따라 학습이 살거나 죽는다.
-이 프로젝트에서 실제로 죽었고, 그 과정과 수정을 그대로 적는다.
+Even with the same formulas as the paper, training lives or dies depending on **which axis the two terms are reduced over**.
+In this project it actually died; here is the process and the fix, as they happened.
 
-### 무슨 일이 있었나
+### What happened
 
-예전 코드는 이랬다.
+The old code was like this.
 
 ```python
-recon_loss = nn.MSELoss()(est_onext, true_onext)   # 45차원 '평균'
-kl_loss    = klds.sum(1).mean(0, True) * self.beta  # 16차원 '합'
-self.beta  = min(self.beta * 1.01, self.beta_limit) # 게다가 β 를 4까지 키움
+recon_loss = nn.MSELoss()(est_onext, true_onext)   # 45-dim 'mean'
+kl_loss    = klds.sum(1).mean(0, True) * self.beta  # 16-dim 'sum'
+self.beta  = min(self.beta * 1.01, self.beta_limit) # on top of that, β grows up to 4
 ```
 
-표준 β-VAE 는 두 항이 **모두 합**(sum/sum)이다. 위 식을 그 형태로 환산하면
-recon 만 1/45 로 눌린 꼴이라
+A standard β-VAE has **both terms as sums** (sum/sum). Converting the above to that form,
+only recon is squashed by 1/45, so
 
 ```
-실효 β = 45 · β        → β=1 에서 45, beta_limit=4 에서 180
+effective β = 45 · β        → 45 at β=1, 180 at beta_limit=4
 ```
 
-가 된다. 결과는 **posterior collapse** 였다. 측정값: 학습된 인코더가 서로 다른 입력에
-대해 같은 값을 뱉었고(`mu→0, logvar→0, σ→1.000`), 16차원 잠재의 정보량이
-**0.02~0.14 nats** — 사실상 0비트였다. actor 가 받는 context 16차원은 매 스텝 새로 뽑히는
-순수 가우시안 노이즈였다. `est_vel` 까지 공유 trunk 를 타고 함께 죽었다.
+The result was **posterior collapse**. Measurements: the trained encoder emitted the same values for different
+inputs (`mu→0, logvar→0, σ→1.000`), and the information content of the 16-dim latent was
+**0.02–0.14 nats** — practically 0 bits. The 16 context dims the actor received were pure Gaussian noise
+drawn fresh every step. Even `est_vel` died along with it through the shared trunk.
 
-**annealing 만 지우는 것으로는 안 된다.** 지워도 실효 β=45 가 그대로 남는다.
+**Just removing the annealing isn't enough.** Even with it removed, an effective β=45 remains.
 
-### 어떻게 고쳤나
+### How it was fixed
 
-**KL 을 잠재 차원 평균으로 바꿔** 세 항을 전부 "차원당 평균"으로 통일했다.
+**The KL was changed to a mean over latent dims**, unifying all three terms as "mean per dimension".
 
-| 항 | 축 | 차원 |
+| Term | Axis | Dims |
 |---|---|---|
-| `vel_loss` | 평균 | 3 |
-| `recon_loss` | 평균 | 45 |
-| `kl_loss` | **평균** | 16 |
+| `vel_loss` | mean | 3 |
+| `recon_loss` | mean | 45 |
+| `kl_loss` | **mean** | 16 |
 
-즉 `.sum(1)` 이던 잠재 차원 축약을 `.mean(1)` 로 내렸다. 그 뒤 배치 평균과 β 는 그대로다.
+That is, the latent-dim reduction that was `.sum(1)` was lowered to `.mean(1)`. The batch mean and β after it are unchanged.
 
-반대 방향(= recon 을 합으로) 으로 맞출 수도 있었지만, 그러면 `vel_loss` 는 3차원 평균인데
-`recon_loss` 만 45배가 되어 **vel:recon 비가 1:1 에서 1:45 로 틀어진다.** 세 항 중 둘이
-이미 평균이므로 KL 을 평균으로 내리는 쪽이 비율을 둘 다 보존한다.
+It could have been matched the other way (= recon as a sum), but then `vel_loss` is a 3-dim mean while
+only `recon_loss` becomes 45x, and **the vel:recon ratio is skewed from 1:1 to 1:45.** Two of the three terms
+are already means, so lowering the KL to a mean preserves both ratios.
 
-> **45 인가 15 인가 — 손으로 세어 본다.** 원소당 오차를 `e` 라 하자.
-> `vel` 을 3차원 **평균**으로 두면 `vel = e`, `recon` 만 45차원 **합**으로 바꾸면
-> `recon = 45e` → **1:45** 다. `3:45 = 1:15` 가 나오려면 **vel 도 합**이어야 한다
-> (`vel = 3e`). 즉 `1:45` 는 "recon 만 합", `1:15` 는 "둘 다 합" 의 수다.
-> 아래 표의 `vel : recon` 행이 `3:45 = 1:15` 인 것은 그쪽이 **"전부 합"** 독법이기 때문이고,
-> 여기 본문은 **"recon 만"** 시나리오라 `1:45` 다. 서로 다른 시나리오의 서로 다른 수다.
-> (이 문서는 한동안 여기에 `1:15` 를 적어 두고 있었다 — 3배 틀린 값이었다.)
+> **45 or 15 — count it by hand.** Let the per-element error be `e`.
+> Keep `vel` as a 3-dim **mean**, so `vel = e`, and change only `recon` to a 45-dim **sum**, so
+> `recon = 45e` → it's **1:45**. To get `3:45 = 1:15`, **vel must be a sum too**
+> (`vel = 3e`). That is, `1:45` is the number for "recon only as a sum", and `1:15` for "both as sums".
+> The `vel : recon` row in the table below is `3:45 = 1:15` because that one is the **"everything summed"** reading,
+> while the text here is the **"recon only"** scenario, hence `1:45`. Different numbers for different scenarios.
+> (This document had `1:15` written here for a while — a value off by 3x.)
 
-이제 실효 β 는
-
-```
-실효 β = (45 / 16) · β ≈ 2.81 · β        (cfg 의 β = 0.35 → 약 0.98)
-```
-
-이다. 45 나 180 이 아니라 1 남짓 — 규제가 붙어 있되 잠재를 죽이지는 않는 범위다.
-
-> **β 는 왜 1.0 이 아니라 0.35 인가.** `CENet` 클래스의 기본값은 `beta=1.0` 이지만 cfg 의
-> `vae` 블록이 **0.35 로 덮어쓴다.** 도메인 랜덤화를 켜자 β=1.0 에서 잠재가 다시 죽었고
-> (`|mu|` 2.9e-2 → 6.3e-4), 랜덤화를 켠 채 살아남은 값이 0.35 였다. 위 환산으로 보면
-> 0.35 는 **교과서 sum/sum β-VAE 의 β ≈ 1** 에 해당한다. 자세한 것은 `PAPER.md` §4 와
-> [`stage5_compare/task04_diagnose`](../../stage5_compare/task04_diagnose/) 에 있다.
-> 설정 값은 늘 그 런의 `params/agent.yaml` 로 확인한다 — 클래스 기본값이 아니라.
-
-> **"축을 맞췄는데 왜 실효 β 가 β 가 아닌가?"** — **"축 정합"은 두 항이 같은 종류의 축약
-> (차원당 평균)을 쓴다는 뜻이지, 교과서 β 와 수치가 같아진다는 뜻이 아니다.** 교과서
-> β-VAE 는 sum/sum 이라 D 와 L 이 둘 다 곱해져 있고, mean/mean 은 둘 다 나눠져 있다.
-> 남는 것이 `D/L` 배다. 실효 β 를 정확히 β 로 맞추고 싶으면 sum/sum 을 쓰거나 β 에
-> `16/45` 를 곱해야 한다. 여기서 산 것은 **"차원 수를 바꿔도 비율이 안 흔들린다"** 이지
-> **"β 가 곧 교과서 β 다"** 가 아니다.
-
-함께 바꾼 것: **β annealing 을 학습 경로에서 제거**(논문 eq.7 은 β 에 스케줄을 주지 않는다.
-나중에 기본 off 게이트 `DWQ_CENET_BETA_ANNEAL` 로 되살려 두었다), **CENet lr 0.01 → 1e-3**
-(논문 Adam lr), **grad clipping `clip_grad_norm_(…, 1.0)` 추가**(PPO 와 같은 예산).
-
-### 고친 게 맞았나 — 사후 검증
-
-"45·β 는 죽었다" 만으로는 부족하다. 바꾼 값이 **정답인지 덜 나쁜 것인지**는 다시 돌려 봐야
-안다. 수정 후 Waq rough 4000 iteration 완주 결과 ([`PAPER.md`](../../../PAPER.md) §4):
-
-- `cenet_kl` 이 0.018(500it) → **0.030(4000it)** 으로 **증가**했다. 붕괴하면 0 으로 내려간다.
-  (이 태그는 KL 자체가 아니라 **`kl_loss` = `β · KL_mean`** 이다. 뒤에 나오는
-  `KL_sum = 4.18 nats` 같은 수와 **단위가 다르다** — 자세한 것은 아래 "KL 축과 β" 절.)
-- 체크포인트 `|mu|` 평균이 전 구간 **2.3e-2 ~ 2.9e-2 단조 증가** (붕괴 런은 2500it 에서 2.1e-3).
-- rough `Waq − Base` 가 **−0.0166 → +0.0073** 으로 **부호가 뒤집혔다.** CENet 이 Base 보다
-  나빴던 것이 이제는 낫다.
-
-단, 여전히 **단일 seed** 이고, 회수한 것은 전체 여유폭(Oracle−Base)의 22% 다.
-
-> **이 세 줄은 도메인 랜덤화를 켜기 전의 sweep 이다.** 랜덤화를 켜자 같은 코드로 잠재가
-> 다시 죽었고, 이번에는 리덕션 축이 아니라 **β 수치**가 범인이었다 (1.0 → 0.35). 즉
-> **리덕션 축을 맞추는 것은 필요조건이지 충분조건이 아니었다.** 무엇이 무엇을 죽였는지
-> 가르는 방법은 [`stage5_compare/task04_diagnose`](../../stage5_compare/task04_diagnose/) 에서 만든다.
-
-> 여기서 얻을 교훈은 하나다 — **"수식대로 구현했다"와 "학습이 된다"는 다른 주장이다.**
-> 손실 항을 여러 개 더할 때는 항상 **리덕션 축부터 맞춘다.**
-
-**단, 이 절의 결론은 지금 이 env 에 한한 것이다.** "합 + β→4 는 죽는다" 를 일반 법칙으로
-가져가면 안 된다 — **같은 sum + β→4 로 실제로 걸었던 조상 구현이 있다.** 무엇이 달랐는지는
-아래 [실제 소스에는 스위치가 더 있다](#실제-소스에는-스위치가-더-있다) 절에서 측정값과 함께 다시 다룬다.
-
-## 논문이 정한 것과 우리가 정한 것
-
-이 절의 내용 중 **무엇이 논문 지식이고 무엇이 이 구현의 선택인지** 구분해 둔다.
-외울 것과 "우리 코드가 그렇더라" 로 알아 둘 것이 다르다.
-
-가르는 선은 이것이다.
+Now the effective β is
 
 ```
-논문이 적은 것   =  수식.  어떤 항이 있고, 어디에 계수가 붙는가
-논문이 비운 것   =  그 수식을 컴퓨터가 다루는 '하나의 수' 로 만드는 규약
-                    (각 항을 어느 축으로 축약하는가, β 에 어떤 수를 넣는가)
+effective β = (45 / 16) · β ≈ 2.81 · β        (cfg β = 0.35 → about 0.98)
 ```
 
-`MSE(ô, o)` 는 수학 문장으로는 완결이지만, 45차원 오차 벡터를 **더할지 평균할지**를
-말하지 않으면 코드가 되지 않는다. 논문이 비운 것이 바로 그 자리다.
+Not 45 or 180, but a little over 1 — a range where regularization is applied but doesn't kill the latent.
 
-| 항목 | 논문(arXiv 2301.10602)이 **수식에 적은 것** | 이 구현이 **정한 것** |
+> **Why β is 0.35 and not 1.0.** The `CENet` class default is `beta=1.0`, but the cfg's
+> `vae` block **overrides it with 0.35.** Once domain randomization was turned on, the latent died again at β=1.0
+> (`|mu|` 2.9e-2 → 6.3e-4), and the value that survived with randomization on was 0.35. By the conversion above,
+> 0.35 corresponds to **β ≈ 1 of the textbook sum/sum β-VAE**. Details are in `PAPER.md` §4 and
+> [`stage5_compare/task04_diagnose`](../../stage5_compare/task04_diagnose/).
+> Always check the setting via that run's `params/agent.yaml` — not the class default.
+
+> **"I matched the axes, so why isn't the effective β equal to β?"** — **"Matching axes" means the two terms use the same kind of reduction
+> (per-dim mean); it doesn't mean the numbers become the same as the textbook β.** The textbook
+> β-VAE is sum/sum, so both D and L are multiplied in, while mean/mean divides both out.
+> What's left is a factor of `D/L`. If you want the effective β to be exactly β, use sum/sum or multiply β by
+> `16/45`. What we gained here is **"the ratio doesn't shake when the number of dims changes"**, not
+> **"β is the textbook β"**.
+
+Changed at the same time: **β annealing removed from the training path** (paper eq.7 gives β no schedule;
+it was later revived behind the default-off gate `DWQ_CENET_BETA_ANNEAL`), **CENet lr 0.01 → 1e-3**
+(the paper's Adam lr), **grad clipping `clip_grad_norm_(…, 1.0)` added** (same budget as PPO).
+
+### Was the fix right — after-the-fact verification
+
+"45·β died" alone isn't enough. Whether the new value is **correct or merely less bad** is only known by running it again.
+Results of a full Waq rough 4000-iteration run after the fix ([`PAPER.md`](../../../PAPER.md) §4):
+
+- `cenet_kl` **increased** from 0.018 (500it) → **0.030 (4000it)**. With collapse it goes down to 0.
+  (This tag is not the KL itself but **`kl_loss` = `β · KL_mean`**. It has **different units** from numbers like
+  `KL_sum = 4.18 nats` that come later — details in the "KL axis and β" section below.)
+- The checkpoint `|mu|` mean **increases monotonically from 2.3e-2 to 2.9e-2** over the whole run (the collapsed run was at 2.1e-3 at 2500it).
+- rough `Waq − Base` **flipped sign** from **−0.0166 → +0.0073.** CENet, which was worse than Base,
+  is now better.
+
+However, it's still a **single seed**, and what was recovered is 22% of the total headroom (Oracle−Base).
+
+> **These three lines are from a sweep before domain randomization was turned on.** With randomization on, the latent
+> died again with the same code, and this time the culprit was not the reduction axis but **the β value** (1.0 → 0.35). That is,
+> **matching the reduction axes was a necessary condition, not a sufficient one.** The method for telling what killed what
+> is built in [`stage5_compare/task04_diagnose`](../../stage5_compare/task04_diagnose/).
+
+> There's one lesson here — **"I implemented it per the formula" and "it trains" are different claims.**
+> When adding several loss terms, always **match the reduction axes first.**
+
+**However, this section's conclusion applies only to this env.** Don't take "sum + β→4 dies" as a general law
+— **there is an ancestor implementation that actually walked with the same sum + β→4.** What was different is
+revisited with measurements in the [The real source has more switches](#the-real-source-has-more-switches) section below.
+
+## What the paper fixes vs. what we chose
+
+This separates which of this section's content is **knowledge from the paper and which is this implementation's choice**.
+What to memorize differs from what to know as "that's how our code is".
+
+The dividing line is this.
+
+```
+What the paper writes  =  the formulas. Which terms exist, and where coefficients attach
+What the paper leaves  =  the conventions that turn those formulas into 'a single number' a computer handles
+                          (which axis each term is reduced over, which number goes into β)
+```
+
+`MSE(ô, o)` is complete as a mathematical statement, but unless it says whether to **sum or average** the 45-dim error vector,
+it doesn't become code. That's exactly the spot the paper leaves blank.
+
+| Item | What the paper (arXiv 2301.10602) **writes in its formulas** | What this implementation **chose** |
 |---|---|---|
-| `L_CE = L_est + L_VAE` (eq.5) | **명시.** 계수 없이 그냥 더한다 = 둘 다 계수 1 이다. 같은 논문이 eq.7 에서는 `β` 를 적었으므로, **가중치를 둘 자리에는 둔다**는 것을 스스로 보였다 | 그대로 1:1. 단 못 박히는 것은 **기호 수준**의 `L_est : L_VAE` 다 — 두 덩어리가 실제로 얼마나 큰 *수* 가 되는지는 아래 축약 규약이 정한다 |
-| `L_VAE = MSE + β·D_KL` (eq.7) | **명시.** 항이 둘이라는 것과 **β 가 KL 쪽에만 붙는다**는 것까지 | 그대로 |
-| "β 는 **상수**다" | **논문 문장이 아니다.** 논문은 β 에 대해 수치도 스케줄도 쓰지 않는다 ("constant" 라는 단어조차 없다) | **우리 독법이다** — "스케줄을 안 적었으니 상수" 로 읽고 상수로 구현했다. 합리적이지만 **인용이 아니라 해석**이다 |
-| **각 항을 하나의 수로 줄이는 축** | **비어 있다.** eq.7 은 어느 축으로 축약하는지 쓰지 않는다. 단 `D_KL(q‖p)` **자체는** 대각 가우시안이면 16차원 **합**이 정의값이라 선택지가 없다 | **우리가 정했다** — 셋 다 차원당 평균. KL 의 `mean(1)` 은 정의값의 1/16 이다. 하지만 아래에서 보듯 **β 와 한 몸이라 독립적인 자유도가 아니다** |
-| **β 의 값** | **수치 없음** | **우리가 정했다** — cfg 의 `beta=0.35` (클래스 기본값 1.0 을 cfg 가 덮어쓴다). "논문이 β=1.0 이라고 했다"는 **틀린 문장**이다 |
-| **`vel : recon` 비** | **eq.5 에서 따라오지 않는다.** eq.5 는 `L_est : L_VAE` 만 묶고, `recon` 은 `L_VAE` **안**의 한 항이다 | **우리가 정했다** — `nn.MSELoss()`(원소 평균)를 양쪽에 똑같이 써서 차원당 1:1. 합으로 맞추면 3:45 = **1:15** 다. 관례에 기댄 선택이지 논문 문장이 아니다 |
+| `L_CE = L_est + L_VAE` (eq.5) | **Explicit.** Simply added without coefficients = both have coefficient 1. Since the same paper writes `β` in eq.7, it shows itself that **it does put a weight where it wants one** | 1:1 as-is. But what's pinned down is `L_est : L_VAE` **at the symbol level** — how large a *number* the two chunks actually become is set by the reduction conventions below |
+| `L_VAE = MSE + β·D_KL` (eq.7) | **Explicit.** Including that there are two terms and that **β attaches only to the KL side** | As-is |
+| "β is **constant**" | **Not a sentence from the paper.** The paper gives β neither a number nor a schedule (the word "constant" doesn't even appear) | **Our reading** — read as "no schedule was written, so it's constant" and implemented as a constant. Reasonable, but **an interpretation, not a quote** |
+| **The axis that reduces each term to one number** | **Blank.** eq.7 doesn't say which axis to reduce over. But `D_KL(q‖p)` **itself**, for a diagonal Gaussian, is defined as a 16-dim **sum**, so there's no choice | **We chose** — per-dim mean for all three. The KL's `mean(1)` is 1/16 of the defined value. But as shown below, **it's one body with β, not an independent degree of freedom** |
+| **The value of β** | **No number** | **We chose** — the cfg's `beta=0.35` (the cfg overrides the class default 1.0). "The paper said β=1.0" is a **false statement** |
+| **The `vel : recon` ratio** | **Doesn't follow from eq.5.** eq.5 only ties `L_est : L_VAE`, and `recon` is one term **inside** `L_VAE` | **We chose** — using `nn.MSELoss()` (element mean) identically on both gives 1:1 per dim. Matching as sums gives 3:45 = **1:15**. A choice relying on convention, not a sentence from the paper |
 
-### KL 축과 β 는 따로 세면 안 된다
+### The KL axis and β must not be counted separately
 
-위 표의 4행과 5행은 **하나의 자유도**다. 곱셈 한 줄로 보인다.
+Rows 4 and 5 of the table above are **a single degree of freedom**. One line of multiplication shows it.
 
 ```
 β · KL_mean  =  β · (KL_sum / 16)  =  (β / 16) · KL_sum
 
-거꾸로 쓰면      β_mean = 16 · β_sum          (같은 손실을 mean 축으로 적을 때의 β)
+written the other way  β_mean = 16 · β_sum          (β when writing the same loss on the mean axis)
 ```
 
-**두 방향을 다 적어 두는 이유**: 축을 mean → sum 으로 바꾸면 β 를 **나누고**(÷16),
-sum → mean 으로 바꾸면 β 를 **곱한다**(×16). 한 방향만 외우면 반대로 갈 때 틀린다.
+**Why both directions are written down**: changing the axis mean → sum **divides** β (÷16),
+and changing sum → mean **multiplies** β (×16). Memorize only one direction and you'll get it wrong going the other way.
 
-즉 `mean(1)` 을 쓰면서 β=0.35 를 넣은 지금 코드는, `sum(1)` 을 쓰면서
-**β = 0.35 / 16 = 0.021875** 를 넣은 코드와 **완전히 같은 손실**이다. 같은 gradient, 같은 학습.
+That is, the current code, using `mean(1)` with β=0.35, is **exactly the same loss** as code using `sum(1)` with
+**β = 0.35 / 16 = 0.021875**. Same gradient, same training.
 
-그래서 "KL 축을 mean 으로 바꿨다"는 **논문 이탈이 아니다.** β 를 어떤 단위로 적느냐의
-문제일 뿐이고, 논문은 β 에 아무 수도 주지 않았으니 어느 단위로 적어도 논문 안이다.
+So "we changed the KL axis to mean" is **not a departure from the paper.** It's only a question of which unit β is written in,
+and since the paper gave β no number, it's within the paper whichever unit you use.
 
-#### 같은 β 를 네 가지 단위로 적으면
+#### The same β written in four units
 
-숫자가 여럿 나와서 헷갈리므로 **어느 단위의 β 인지**를 붙여 한 표에 모은다.
-가로 한 줄이 같은 손실 함수를, 세로 한 칸이 같은 표기 규약을 뜻한다.
+Several numbers come up and it gets confusing, so they're gathered in one table, each tagged with **which unit of β it is**.
+Each row is the same loss function; each column is the same notation convention.
 
-| β 를 어느 단위로 적나 | 옛 코드 (`sum(1)`, annealing) | 지금 (`mean(1)`) |
+| Which unit β is written in | Old code (`sum(1)`, annealing) | Now (`mean(1)`) |
 |---|---|---|
-| **cfg 에 실제로 적힌 값** (`vae.beta`) | 1.0 → anneal 로 4.0 까지 | **0.35** |
-| KL 을 **sum** 으로 쓸 때의 β | 1.0 → 4.0 (= cfg 값 그대로) | 0.35 / 16 = **0.021875** |
-| KL 을 **mean** 으로 쓸 때의 β | 16 → **64** | **0.35** (= cfg 값 그대로) |
-| 교과서 sum/sum **실효 β** (recon 까지 합으로 환산) | 45 → **180** | (45/16)·0.35 ≈ **0.98** |
+| **Value actually written in the cfg** (`vae.beta`) | 1.0 → up to 4.0 by annealing | **0.35** |
+| β when the KL is written as a **sum** | 1.0 → 4.0 (= the cfg value as-is) | 0.35 / 16 = **0.021875** |
+| β when the KL is written as a **mean** | 16 → **64** | **0.35** (= the cfg value as-is) |
+| Textbook sum/sum **effective β** (converted with recon as a sum too) | 45 → **180** | (45/16)·0.35 ≈ **0.98** |
 
-읽는 법: **cfg 행과 "그 코드가 쓰는 축" 행이 같은 수**다. 옛 코드는 `sum` 을 썼으니
-cfg 의 4.0 이 곧 sum 단위 β 였고, 지금은 `mean` 을 쓰니 cfg 의 0.35 가 곧 mean 단위 β 다.
-나머지 칸은 전부 그 수를 다른 단위로 옮겨 적은 것이다.
+How to read it: **the cfg row and the "axis that code uses" row are the same number**. The old code used `sum`, so
+the cfg's 4.0 was the sum-unit β; now it uses `mean`, so the cfg's 0.35 is the mean-unit β.
+All the other cells are that number rewritten in another unit.
 
-> 그러면 앞의 "리덕션 축" 절은 뭐였나 — 거기서 진짜로 바뀐 것은 **β 의 실효 크기**다.
-> 위 표의 맨 아랫줄을 보면 **180 → 0.98**, 약 **183배** 내려갔다.
-> 그 183배는 축과 β 가 각각 만든 것이 아니라 **둘이 함께 만든 하나의 값**이다.
-> (mean 단위로 읽으면 64 → 0.35 로 역시 183배다 — 같은 사건을 다른 단위로 적었을 뿐이다.)
+> Then what was the earlier "Reduction axis" section about — what really changed there was **the effective size of β**.
+> The bottom row of the table above shows **180 → 0.98**, a drop of about **183x**.
+> That 183x wasn't made separately by the axis and by β; it's **one value made by the two together**.
+> (Read in mean units it's 64 → 0.35, again 183x — the same event written in different units.)
 >
-> **cfg 편집 이력과 혼동하지 않는다.** cfg 에 적힌 수의 실제 이력은
-> `1.0 (+ anneal → 4.0)` → `1.0` → `0.35` 이고, `64` 와 `180` 은 **아무도 타이핑한 적 없는
-> 환산값**이다. 16 · 45/16 · 45 는 전부 단위 환산 계수이지 서로 다른 사건이 아니다.
+> **Don't confuse it with the cfg edit history.** The actual history of the number written in the cfg is
+> `1.0 (+ anneal → 4.0)` → `1.0` → `0.35`, and `64` and `180` are **converted values nobody ever
+> typed**. 16 · 45/16 · 45 are all unit-conversion factors, not separate events.
 
-**β 가 흡수하지 못하는 축은 딱 하나, `vel : recon` 이다.** β 는 KL 에만 붙으므로
-(eq.7 이 그렇게 적었다) `vel` 과 `recon` 사이의 비는 β 를 아무리 돌려도 안 움직인다.
-`recon` **만** 합으로 바꾸면 1:1 → **1:45** 가 되고(둘 다 합으로 바꾸면 3:45 = 1:15),
-그것을 되돌릴 손잡이가 손실 식 안에 없다.
+**There's exactly one axis β can't absorb: `vel : recon`.** β attaches only to the KL
+(that's how eq.7 writes it), so the ratio between `vel` and `recon` doesn't move however much you turn β.
+Change **only** `recon` to a sum and it becomes 1:1 → **1:45** (change both to sums and it's 3:45 = 1:15),
+and there's no knob inside the loss formula to undo it.
 
-#### 따름정리 — "그럼 축은 아무래도 상관없나"
+#### Corollary — "so does the axis not matter at all?"
 
-아니다. **축과 β 를 같이 옮길 때** 하는 말이다.
+No. That only holds **when you move the axis and β together**.
 
-축 자체는 표기지만, **β 를 cfg 에 고정한 채 축만 바꾸면** 실효 압력이 정확히 16배 움직인다.
-`DWQ_CENET_KL_REDUCTION=sum` 이 하는 일이 바로 그것이다 — β 는 0.35 그대로 두고 축만
-`sum` 으로 미니, mean 단위로는 **β = 0.35 × 16 = 5.6** 이 된다. 위 표의 "지금" 열을
-한 칸 위로 밀어 올린 셈이고, 이것은 **표기 변경이 아니라 설정 변경**이다.
+The axis itself is notation, but **changing only the axis while keeping β fixed in the cfg** moves the effective pressure by exactly 16x.
+That's exactly what `DWQ_CENET_KL_REDUCTION=sum` does — leaving β at 0.35 and pushing only the axis
+to `sum` makes it **β = 0.35 × 16 = 5.6** in mean units. It's like pushing the "Now" column of the table above
+up one row, and it's **a change of settings, not a change of notation**.
 
-> 정리: "축은 자유도가 아니다" = **β 를 같이 옮기면** 같은 모형이다.
-> "축을 바꿨더니 결과가 달라졌다" = β 를 **안 옮겼다**는 뜻이다.
+> Summary: "the axis isn't a degree of freedom" = it's the same model **if you move β along with it**.
+> "I changed the axis and the result changed" = it means you **didn't move** β.
 
-여기서 따라오는 실무 습관 하나 — **로그에 찍히는 `Loss/cenet_kl` 은 KL 이 아니다.**
-그 태그가 담는 것은 `kl_loss`, 즉 `β · KL_mean = (β/16) · KL_sum` 이다.
-β=0.35 에서 `KL_sum` 이 4.0 nats 면 로그에는 **0.0875** 가 찍힌다 (45배쯤 작은 수다).
-**KL 값을 인용할 때는 항상 어느 축의, β 를 곱한 것인지 아닌지를 함께 말한다.**
+One practical habit follows from this — **the `Loss/cenet_kl` printed in the logs is not the KL.**
+What that tag holds is `kl_loss`, i.e. `β · KL_mean = (β/16) · KL_sum`.
+At β=0.35, if `KL_sum` is 4.0 nats, the log shows **0.0875** (a number about 45x smaller).
+**When quoting a KL value, always say which axis it's on and whether β is multiplied in or not.**
 
-정리하면 — **논문은 수식(어떤 항이 있고 계수가 어디 붙는가)을 못 박았고, 그 수식을 하나의
-수로 만드는 규약(축약 축)과 β 의 값을 비워 두었다.** 그리고 비어 있던 자리에서 실질적인
-선택지는 셋이 아니라 **둘**이다 — **`vel : recon` 축**과 **β**(= KL 축 × β 값).
-그 둘이 **학습이 되느냐 마느냐를 갈랐다.**
+To sum up — **the paper pinned down the formulas (which terms exist and where coefficients attach), and left blank the conventions
+that turn those formulas into a single number (the reduction axes) and the value of β.** And in that blank space the substantive
+choices are not three but **two** — **the `vel : recon` axis** and **β** (= KL axis × β value).
+Those two **decided whether training works or not.**
 
-> **이 문서도 한 번 틀렸었다.** 이전 판은 "`vel : recon` 1:1 도 eq.5 의 근거가 있다" 고 적었다.
-> eq.5 는 `L_VAE` 를 recon 과 KL 로 쪼개 주지 않으므로 **틀린 인용**이었다. 또 "β 는 상수"
-> 를 논문 명시로, KL 축을 독립 자유도로 적었는데 둘 다 과했다.
+> **This document was wrong once too.** An earlier version wrote "the `vel : recon` 1:1 also has grounds in eq.5".
+> eq.5 doesn't split `L_VAE` into recon and KL, so that was **a false citation**. It also wrote "β is constant"
+> as stated in the paper, and the KL axis as an independent degree of freedom — both were overstatements.
 >
-> **같은 문장이 앞 실습에도 있었다.** [`task01_vae`](../task01_vae/) 가 "annealing 도
-> 제거했다(논문 eq.7 의 β 는 상수다)" 라고 적고 있었다 — 즉 이 코스는 **틀린 문장을 먼저
-> 두 번 가르치고 여기서 뒤집는** 구조였다. 지금은 앞쪽도 같이 고쳤다. 문서가 여러 개면
-> **정정은 원본 한 곳이 아니라 그 문장이 복제된 모든 곳**에 해야 한다.
-> — **"논문에 있다"고 쓰기 전에 그 문장이 원문의 어느 줄인지 짚어 본다.** 못 짚으면 그것은
-> 인용이 아니라 해석이고, 해석이라고 적어야 한다.
+> **The same sentence was in the previous exercise too.** [`task01_vae`](../task01_vae/) said "annealing was also
+> removed (β in paper eq.7 is constant)" — i.e. this course was structured to **teach the false sentence twice first
+> and then overturn it here**. Now the earlier one has been fixed as well. When there are several documents,
+> **a correction must be made not in one original place but everywhere that sentence was duplicated**.
+> — **Before writing "it's in the paper", pin down which line of the original that sentence is.** If you can't, it's
+> an interpretation, not a quote, and must be written as an interpretation.
 
-## 실제 소스에는 스위치가 더 있다
+## The real source has more switches
 
-이 실습의 `starter/cenet.py` 는 프로덕션 `cenet.py` 를 그대로 잘라 만든 것이지만, **한 덩어리는
-일부러 지웠다.** 진짜 소스에는 환경변수로 켜는 실험용 스위치가 여러 개 있다.
+This exercise's `starter/cenet.py` was cut as-is from the production `cenet.py`, but **one chunk was
+deliberately removed.** The real source has several experiment switches turned on by environment variables.
 
 ```bash
-DWQ_CENET_BETA=0.35            # KL 가중치
-DWQ_CENET_FREE_BITS=0.05       # 차원당 KL 바닥 (free bits)
-DWQ_CENET_KL_REDUCTION=sum     # KL 축약 축을 '합' 으로
+DWQ_CENET_BETA=0.35            # KL weight
+DWQ_CENET_FREE_BITS=0.05       # per-dim KL floor (free bits)
+DWQ_CENET_KL_REDUCTION=sum     # KL reduction axis as 'sum'
 DWQ_CENET_BETA_ANNEAL=1        # beta *= 1.01
-DWQ_CENET_GRAD_CLIP=0          # gradient clipping 끄기
-DWQ_CENET_REFERENCE=1          # 위 넷을 IsaacGym 원본 값으로 한 번에
+DWQ_CENET_GRAD_CLIP=0          # turn off gradient clipping
+DWQ_CENET_REFERENCE=1          # set the four above to the IsaacGym original values at once
 ```
 
-> **`KL_REDUCTION=sum` 과 `BETA` 는 같은 손잡이다** (`free_bits=0` 일 때). `sum` 으로 미는
-> 것은 β 를 **16배** 하는 것과 정확히 같다 — 이유는 위 "KL 축과 β 는 따로 세면 안 된다" 절.
-> 그래서 둘을 같이 켤 때는 **무엇을 재고 있는지** 헷갈리기 쉽다.
+> **`KL_REDUCTION=sum` and `BETA` are the same knob** (when `free_bits=0`). Pushing to `sum`
+> is exactly the same as multiplying β by **16** — for why, see the "The KL axis and β must not be counted separately" section above.
+> So when turning both on, it's easy to get confused about **what you're measuring**.
 
-**전부 기본 off 다.** 하나도 켜지 않으면 학습되는 수식은 이 실습에서 채운 것과 정확히 같다.
-지운 이유는 둘이다. 하나는 TODO 바로 위에 55줄짜리 게이트 주석이 있으면 읽을 것과 안 읽어도
-될 것이 뒤섞이기 때문이고, 다른 하나는 게이트가 쓰는 도우미 함수(`_kl_term_gated`)가
-**지금 채워야 할 KL 식을 그대로 담고 있어서** 답안지가 되기 때문이다.
+**All are off by default.** With none turned on, the formulas trained are exactly the same as what you filled in in this exercise.
+There are two reasons they were removed. One is that a 55-line gate comment right above the TODO mixes what to read
+with what you don't need to read; the other is that the helper function the gates use (`_kl_term_gated`)
+**contains exactly the KL formula you must fill in now**, making it an answer key.
 
-게이트를 지우면서 **게이트만 읽던 설정값들**(`free_bits`, `kl_reduction`, `beta_anneal`,
-`beta_limit`)과 게이트 전용 모듈(`_DecoderVelGate`)도 같이 지웠다. 특히 `self.kl_reduction`
-은 `__init__` 에 남겨 두면 TODO 에서 "KL 을 어느 축으로 줄이나" 를 정하는 바로 그 순간에
-`== "sum"` 분기를 써야 하는 것처럼 보인다 — 실제로는 이 실습에서 아무도 읽지 않는 값이다.
-starter 의 `__init__` 에서 아래 코드가 실제로 읽는 설정은 `self.grad_clip` 하나뿐이다.
+While removing the gates, **the settings only the gates read** (`free_bits`, `kl_reduction`, `beta_anneal`,
+`beta_limit`) and the gate-only module (`_DecoderVelGate`) were removed too. In particular, if `self.kl_reduction`
+were left in `__init__`, then at the very moment you decide "which axis to reduce the KL over" in the TODO it would look like
+you should write an `== "sum"` branch — when in fact it's a value nobody reads in this exercise.
+The only setting the code below actually reads from the starter's `__init__` is `self.grad_clip`.
 
-### 그런데 `DWQ_CENET_KL_REDUCTION=sum` 은 위에서 틀렸다고 한 그 축이다
+### But `DWQ_CENET_KL_REDUCTION=sum` is the very axis said to be wrong above
 
-맞다. 그래서 짚고 넘어간다.
+Right. So let's address it.
 
-이 프로젝트의 **IsaacGym 조상 구현**(`dreamwaq/rsl_rl/rsl_rl/vae/cenet.py`)은 KL 을 **합**으로
-쓰고 β 를 4까지 키웠다. 그리고 그 구현은 **실제로 걸었다.** 그러면 "합이 틀렸다"는 우리
-결론이 이상해진다 — 그래서 다시 재 보려고 만든 스위치가 저것이다. 논문은 축약 축을 정하지
-않으므로, 어느 쪽이 맞는지는 **논쟁이 아니라 실험으로** 정할 문제다.
+This project's **IsaacGym ancestor implementation** (`dreamwaq/rsl_rl/rsl_rl/vae/cenet.py`) wrote the KL as a **sum**
+and grew β up to 4. And that implementation **actually walked.** Then our conclusion that "the sum was wrong"
+becomes odd — so that switch was made to measure it again. The paper doesn't fix the reduction axis,
+so which one is right is a question to settle **by experiment, not argument**.
 
-재 봤고, 결과는 이렇다 (rough Waq, 600 it, `PAPER.md` §4).
+We measured it, and the results are these (rough Waq, 600 it, `PAPER.md` §4).
 
-| 설정 | `\|mu\|` | `KL_sum`(nats) | 활성 잠재 차원 | 판정 |
+| Setting | `\|mu\|` | `KL_sum` (nats) | Active latent dims | Verdict |
 |---|---|---|---|---|
-| 기본값 (평균, β=0.35) | **0.215** | 4.18 | 5 / 16 | 산다 |
-| `DWQ_CENET_REFERENCE=1` (합 + β→4) | 0.008 | 0.0005 | **0 / 16** | **죽는다** |
+| Default (mean, β=0.35) | **0.215** | 4.18 | 5 / 16 | Lives |
+| `DWQ_CENET_REFERENCE=1` (sum + β→4) | 0.008 | 0.0005 | **0 / 16** | **Dies** |
 
-> `KL_sum` 은 **16차원 합**이고 **β 를 곱하기 전** 값이다 (진단용 `cenet_kl_nats` 태그).
-> 위 "고친 게 맞았나" 절의 `cenet_kl = 0.030` 과 헷갈리지 않는다 — 그쪽은 `β·KL_mean` 이라
-> 같은 상태에서도 45배쯤 작은 수가 나온다.
+> `KL_sum` is the **16-dim sum** and the value **before multiplying by β** (the diagnostic `cenet_kl_nats` tag).
+> Don't confuse it with `cenet_kl = 0.030` in the "Was the fix right" section above — that one is `β·KL_mean`, so
+> it's a number about 45x smaller even in the same state.
 
-**지금 env 에서는 실효 β 가 낮아야 한다** — 정확히는 "평균이 옳다" 가 아니라
-"`합 + β→4`(= mean 단위 β 64)는 이 env 에서 죽는다" 다. 같은 손실을 `합` 으로 적더라도
-β 를 0.021875 로 함께 옮겼다면 위 1행과 **완전히 같은 결과**가 나온다.
-그리고 원본이 살았던 이유도 함께 밝혀졌다 — 손실 설정이
-좋아서가 아니라 **원본 env 가 z 에게 일을 많이 줬기 때문**이다 (1초마다 ±1 m/s 로 미는
-외란이 있었다). 잠재변수는 할 일이 있어야 살고, **얼마나 눌러도 되는지는 그 일의 양에
-달렸다.** 손실 함수의 정답은 env 를 말하지 않으면 반쪽이다.
+**In the current env the effective β must be low** — more precisely, not "the mean is right" but
+"`sum + β→4` (= β 64 in mean units) dies in this env". Even writing the same loss as a `sum`,
+if β is moved along to 0.021875, you get **exactly the same result** as row 1 above.
+And the reason the original lived was uncovered too — not because its loss settings
+were good but **because the original env gave z a lot of work to do** (there was a disturbance pushing
+±1 m/s every second). A latent variable lives only if it has work to do, and **how hard you can press on it depends on
+the amount of that work.** The right answer for a loss function is only half an answer if it doesn't mention the env.
 
-> 게이트를 직접 켜 보고 싶으면 프로덕션 소스를 쓴다. 학습을 돌리는 이야기라 GPU 가 필요하고,
-> 결과를 보고할 때는 **어떤 게이트를 켰는지 `PAPER.md` 에 적는다** — 켠 채로 낸 수치를
-> 기본 설정의 수치인 것처럼 쓰면 안 된다.
+> If you want to try turning the gates on yourself, use the production source. It's about running training, so it needs a GPU,
+> and when reporting results, **write in `PAPER.md` which gates you turned on** — never present numbers produced with them on
+> as if they were numbers for the default settings.
 
-## 다음
+## Next
 
-- [`runner-augment`](../runner-augment/) — actor 관측을 45 → 64 로 증강하는 지점 (L2)
+- [`runner-augment`](../runner-augment/) — where the actor observation is augmented 45 → 64 (L2)
 
-앞 단계를 건너뛰었다면 [`task01_vae`](../task01_vae/) (L3) → [`cenet-forward`](../cenet-forward/) (L2)
-순서로 먼저 한다. 단계 전체 지도는 [Stage 4 README](../README.md) 에 있다.
+If you skipped the earlier steps, do [`task01_vae`](../task01_vae/) (L3) → [`cenet-forward`](../cenet-forward/) (L2)
+first, in that order. The map of the whole stage is in the [Stage 4 README](../README.md).

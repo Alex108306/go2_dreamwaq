@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Stage 4 · task01 — 순수 VAE (toy 데이터).
+"""Stage 4 · task01 — Plain VAE (toy data).
 
-CENet 은 VAE 다. 지형도, 로봇도, Isaac Sim 도 없이 VAE 만 먼저 세운다.
-여기서 쓴 encode / reparameterize / decode / ELBO 가 다음 실습(cenet-forward,
-cenet-loss)에서 그대로 CENet 이 된다.
+CENet is a VAE. First build just the VAE — no terrain, no robot, no Isaac Sim.
+The encode / reparameterize / decode / ELBO written here become CENet as-is in the next exercises (cenet-forward,
+cenet-loss).
 
-    python solution.py                # toy 데이터로 짧게 학습하고 손실이 줄어드는지 본다
-    python solution.py --beta 10.0    # 규제를 세게 걸어 posterior collapse 를 눈으로 본다
+    python solution.py                # train briefly on toy data and see whether the loss decreases
+    python solution.py --beta 10.0    # apply strong regularization and see posterior collapse with your own eyes
 """
 from __future__ import annotations
 
@@ -19,12 +19,12 @@ INPUT_DIM, HIDDEN_DIM, LATENT_DIM = 8, 32, 2
 
 
 def make_toy_batch(batch: int, input_dim: int = INPUT_DIM, seed: int | None = None) -> torch.Tensor:
-    """2차원 잠재 구조를 input_dim 차원으로 펼친 toy 관측.
+    """Toy observations: a 2-dim latent structure spread out into input_dim dimensions.
 
-    진짜 자유도는 2뿐인데 8차원으로 관측된다 — VAE 가 찾아내야 하는 상황을 만든 것이다.
-    DreamWaQ 로 치면 "지형의 진짜 상태는 몇 개 수로 요약되는데 로봇은 225차원 이력만 본다"에 해당한다.
+    The true degrees of freedom are only 2, but it's observed in 8 dims — a situation made for the VAE to uncover.
+    In DreamWaQ terms, this corresponds to "the true state of the terrain is summarized by a few numbers, but the robot only sees a 225-dim history".
     """
-    gen = torch.Generator().manual_seed(0)  # 펼치는 행렬은 항상 같아야 한다
+    gen = torch.Generator().manual_seed(0)  # the spreading matrix must always be the same
     mixer = torch.randn(LATENT_DIM, input_dim, generator=gen)
     if seed is not None:
         torch.manual_seed(seed)
@@ -32,21 +32,21 @@ def make_toy_batch(batch: int, input_dim: int = INPUT_DIM, seed: int | None = No
     return z_true @ mixer + 0.05 * torch.randn(batch, input_dim)
 
 
-# ex:begin id=vae-core level=3 stage=stage4_cenet task=toy 데이터용 VAE 를 통째로 구현한다 — encode / reparameterize / decode / ELBO
-#   hint: encoder 는 입력을 2*latent_dim 으로 보내고, 앞 절반을 mu, 뒤 절반을 logvar 로 가른다
-#   hint: reparameterize 는 z = mu + eps * std, std = exp(0.5 * logvar), eps ~ N(0, I) 다. mu 로 gradient 가 흘러야 한다
-#   hint: KL(q||p) = -0.5 * sum_j (1 + logvar_j - mu_j^2 - exp(logvar_j)) — 그 뒤 잠재 차원으로 '평균'내고 배치로도 평균낸다. recon 이 MSE 평균이라 축을 맞추는 것이다
-#   hint: loss 가 돌려주는 kl 에는 self.beta 를 이미 곱해 둔다 (total = recon + kl). CENet 과 같은 규약이다
-#   hint: 요구되는 정확한 API 는 이 폴더의 README.md 에 적혀 있다
+# ex:begin id=vae-core level=3 stage=stage4_cenet task=Implement the whole VAE for toy data — encode / reparameterize / decode / ELBO
+#   hint: the encoder maps the input to 2*latent_dim; split the first half as mu and the second half as logvar
+#   hint: reparameterize is z = mu + eps * std, std = exp(0.5 * logvar), eps ~ N(0, I). Gradient must flow to mu
+#   hint: KL(q||p) = -0.5 * sum_j (1 + logvar_j - mu_j^2 - exp(logvar_j)) — then 'average' over latent dims and also over the batch. recon is an MSE mean, so this matches the axes
+#   hint: the kl returned by loss already has self.beta multiplied in (total = recon + kl). Same convention as CENet
+#   hint: the exact required API is written in README.md in this folder
 class ToyVAE(nn.Module):
-    """입력 -> 잠재분포 -> 표집 -> 복원. CENet 의 뼈대와 같다."""
+    """Input -> latent distribution -> sample -> reconstruction. Same skeleton as CENet."""
 
     def __init__(self, input_dim=INPUT_DIM, hidden_dim=HIDDEN_DIM, latent_dim=LATENT_DIM, beta=1.0):
         super().__init__()
         self.latent_dim = latent_dim
         self.beta = beta
 
-        # 인코더는 mu 와 logvar 를 한 번에 낸다 — 그래서 출력이 2 * latent_dim 이다.
+        # The encoder outputs mu and logvar at once — that's why the output is 2 * latent_dim.
         self.encoder = nn.Sequential(
             nn.Linear(input_dim, hidden_dim), nn.ELU(),
             nn.Linear(hidden_dim, latent_dim * 2),
@@ -62,8 +62,8 @@ class ToyVAE(nn.Module):
         return mu, logvar
 
     def reparameterize(self, mu, logvar):
-        # 표집을 mu + eps*std 로 쓰면 무작위성이 eps 에만 남아 mu/logvar 로 gradient 가 흐른다.
-        # z ~ N(mu, sigma^2) 에서 그냥 뽑으면 미분할 수 없다 — 이것이 reparameterization trick 이다.
+        # Writing the sample as mu + eps*std leaves randomness only in eps, so gradient flows to mu/logvar.
+        # Drawing directly from z ~ N(mu, sigma^2) isn't differentiable — this is the reparameterization trick.
         std = torch.exp(0.5 * logvar)
         eps = torch.randn_like(std)
         return mu + eps * std
@@ -81,8 +81,8 @@ class ToyVAE(nn.Module):
 
         recon_loss = nn.MSELoss()(x_hat, x)
 
-        # recon 은 nn.MSELoss() — 입력 차원당 평균이다. KL 도 같은 축(잠재 차원당 평균)으로
-        # 축약해야 두 항의 비율이 차원 수에 휘둘리지 않는다. CENet 과 같은 규약이다.
+        # recon is nn.MSELoss() — a mean per input dimension. The KL must be reduced over the same axis
+        # (mean per latent dim) so the ratio of the two terms isn't swayed by the number of dims. Same convention as CENet.
         klds = -0.5 * (1 + logvar - mu.pow(2) - logvar.exp())
         kl_loss = klds.mean(-1).mean() * self.beta
 
@@ -92,7 +92,7 @@ class ToyVAE(nn.Module):
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--beta", type=float, default=1.0, help="KL 가중치. 1.0 과 10.0 을 비교해 본다")
+    ap.add_argument("--beta", type=float, default=1.0, help="KL weight. Compare 1.0 and 10.0")
     args = ap.parse_args()
 
     torch.manual_seed(0)
@@ -113,9 +113,9 @@ def main() -> int:
             print(f"  step {step:3d}  total={total.item():8.4f}  recon={recon.item():8.4f}  kl={kl.item():7.4f}")
         last = total.item()
 
-    print(f"\n첫 손실 {first:.4f} → 마지막 손실 {last:.4f}")
-    assert last < first, "학습이 손실을 줄이지 못했다"
-    print("[PASS] toy VAE 가 학습된다.")
+    print(f"\nfirst loss {first:.4f} → last loss {last:.4f}")
+    assert last < first, "training didn't reduce the loss"
+    print("[PASS] the toy VAE trains.")
     return 0
 
 

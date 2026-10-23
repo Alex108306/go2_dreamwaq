@@ -208,13 +208,13 @@ class OnPolicyRunnerWaq(OnPolicyRunner):
     def _build_actor_obs(self, base_obs, vel_input, context_vec, src_obs) -> torch.Tensor:
         """Build the actor observation: [norm(base), vel, context] (+ exteroception)."""
         # ── TODO(runner-augment) ─ level L2 ─────────────────────────────
-        # actor 관측을 45 → 64 로 증강한다 — 정규화한 base 관측에 추정 속도와 context 를 잇는다
-        #   hint: self._norm_base(base_obs) 가 base 관측(45)을 obs_rms 로 정규화해 준다
-        #   hint: vel_input(3) 과 context_vec(16) 은 정규화하지 않고 그대로 잇는다 — 45 + 3 + 16 = 64
-        #   hint: 잇는 순서가 actor 의 입력 레이아웃이다. 학습과 배포가 같은 순서를 써야 한다
-        #   hint: rough 지형은 use_exteroception 이 True 라 height_scan 을 뒤에 덧붙인다 (self._extract_extero(src_obs))
-        #   hint: 결과를 actor_obs 에 담는다 — 아래의 NaN 경고와 nan_to_num 이 그 이름을 쓴다 (그 부분은 주어져 있다)
-        # 통과 기준은 이 실습 폴더의 README.md 를 본다.
+        # Augment the actor observation 45 → 64 — concatenate the estimated velocity and context to the normalized base observation
+        #   hint: self._norm_base(base_obs) normalizes the base observation (45) with obs_rms
+        #   hint: vel_input(3) and context_vec(16) are concatenated as-is without normalization — 45 + 3 + 16 = 64
+        #   hint: The concatenation order is the actor's input layout. Training and deployment must use the same order
+        #   hint: Rough terrain has use_exteroception True, so height_scan is appended at the end (self._extract_extero(src_obs))
+        #   hint: Put the result in actor_obs — the NaN warning and nan_to_num below use that name (that part is given)
+        # For the pass criteria, see README.md in this exercise folder.
         raise NotImplementedError("TODO(runner-augment)")
         # ─────────────────────────────────────────────────────────────────────
         # nan=0.0 keeps training alive, but silently: a NaN CENet washes the 19 estimate dims to

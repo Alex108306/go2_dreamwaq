@@ -58,7 +58,9 @@ class delayed(ManagerTermBase):
         self._resample(slice(None), env.num_envs)
 
     def _resample(self, env_ids, count: int) -> None:
-        self._delay[env_ids] = torch.rand(count, 1, device=self._env.device) * self._max_delay
+        self._delay[env_ids] = (
+            torch.rand(count, 1, device=self._env.device) * self._max_delay
+        )
 
     def reset(self, env_ids: torch.Tensor | None = None) -> None:
         if env_ids is None:
@@ -70,8 +72,11 @@ class delayed(ManagerTermBase):
             if self._prev is not None:
                 self._prev[env_ids] = 0.0
 
-    def __call__(self, env: ManagerBasedEnv, func, max_delay: float = 0.25, **kwargs) -> torch.Tensor:
-        current = func(env, **kwargs)
+    # No **kwargs: Isaac Lab's term-param check treats it as a mandatory param named "kwargs".
+    def __call__(
+        self, env, func, max_delay: float = 0.25, func_params: dict | None = None
+    ):
+        current = func(env, **(func_params or {}))
         if self._prev is None:
             self._prev = torch.zeros_like(current)
         delayed_obs = self._delay * self._prev + (1.0 - self._delay) * current

@@ -230,10 +230,10 @@ public:
   unitree::robot::go2::SportClient sport_client;
   unitree::robot::ChannelSubscriberPtr<unitree_go::msg::dds_::SportModeState_> suber;
 
-  double px0, py0, yaw0; // 初始状态的位置和偏航
-  double ct = 0;         // 运行时间
-  int flag = 0;          // 特殊动作执行标志
-  float dt = 0.005;      // 控制步长0.001~0.01
+  double px0, py0, yaw0; // Initial position and yaw
+  double ct = 0;         // Running time
+  int flag = 0;          // Flag for executing special motions
+  float dt = 0.005;      // Control step size, 0.001~0.01
 };
 
 int main(int argc, char **argv)

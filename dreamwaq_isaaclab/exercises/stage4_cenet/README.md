@@ -1,62 +1,62 @@
-# Stage 4 — 지형 context 학습 CENet (VAE)
+# Stage 4 — Terrain-context learning CENet (VAE)
 
-**이 강의의 제목이 걸린 단계다.** 앞의 세 stage 는 여기를 위한 준비였다.
+**This is the stage the course is named after.** The previous three stages were preparation for this.
 
-DreamWaQ 가 푸는 문제는 하나다 — **로봇은 자기 몸통 속도를 재는 센서도, 지형을 보는
-카메라도 없다.** 관절 각도와 IMU 만 있다. 그런데 거친 지형을 걸으려면 둘 다 필요하다.
+DreamWaQ solves one problem — **the robot has neither a sensor that measures its base velocity nor a camera
+that sees the terrain.** It only has joint angles and an IMU. Yet walking on rough terrain needs both.
 
-CENet 의 답: **과거 관측 이력(225) 만으로 "다음에 무슨 일이 일어날지"를 복원하도록
-강제하면**, 그 잠재 벡터에 지형 정보가 저절로 스며든다. 이것이 논문이 말하는
-*implicit terrain imagination* 이다. 지형을 직접 배우라고 시키지 않는다.
+CENet's answer: **if you force it to reconstruct "what happens next" from the past observation history (225) alone**,
+terrain information seeps into that latent vector on its own. This is what the paper calls
+*implicit terrain imagination*. It is never told to learn the terrain directly.
 
-## 3단으로 쌓는다
+## Built up in 3 levels
 
 ```
-task01_vae     순수 VAE            (L3)  <- toy 데이터. Isaac Sim·로봇 없음
-cenet-forward  CENet 구조로 확장    (L2)  <- 실제 cenet.py 의 forward
-cenet-loss     CENet 의 손실        (L2)  <- 실제 cenet.py 의 update
-runner-augment 러너에 결합          (L2)  <- actor 관측 45 -> 64
+task01_vae     plain VAE                 (L3)  <- toy data. No Isaac Sim, no robot
+cenet-forward  extend to CENet structure (L2)  <- forward of the real cenet.py
+cenet-loss     CENet's losses            (L2)  <- update of the real cenet.py
+runner-augment wire into the runner      (L2)  <- actor observation 45 -> 64
 ```
 
-각 단계는 앞 단계에서 쓴 것을 그대로 키운다.
+Each step grows directly out of what you wrote in the previous one.
 
-| | task01 (toy) | CENet (실제) |
+| | task01 (toy) | CENet (real) |
 |---|---|---|
-| 입력 | `x` (8) | `obs_history` (225 = 45 × 5 프레임) |
-| 잠재 | `mu, logvar` (2) | `mu, logvar` (16) + **`est_vel` (3)** |
-| 출력 | `x_hat` (8) — 자기 자신 | `est_next_obs` (45) — **다음 스텝** |
-| 손실 | recon + β·KL | recon + β·KL + **vel** |
+| Input | `x` (8) | `obs_history` (225 = 45 × 5 frames) |
+| Latent | `mu, logvar` (2) | `mu, logvar` (16) + **`est_vel` (3)** |
+| Output | `x_hat` (8) — itself | `est_next_obs` (45) — **the next step** |
+| Loss | recon + β·KL | recon + β·KL + **vel** |
 
-차이는 두 군데뿐이다.
+There are only two differences.
 
-1. **`est_vel` 가지가 하나 더 붙는다.** 인코더 출력의 앞 3 차원을 속도 추정에 쓰고,
-   실제 base linear velocity 로 지도학습한다. 이것이 "속도 센서 없이 속도를 아는" 부분이다.
-2. **복원 대상이 자기 자신이 아니라 다음 스텝 관측이다.** 자기 자신을 복원하면
-   압축만 배운다. 다음을 복원해야 *동역학* 을 배우고, 거기에 지형이 들어 있다.
+1. **One more branch, `est_vel`, is attached.** The first 3 dims of the encoder output are used for velocity estimation
+   and supervised with the actual base linear velocity. This is the part that "knows its velocity without a velocity sensor".
+2. **The reconstruction target is the next step's observation, not itself.** Reconstructing itself
+   only learns compression. Reconstructing the next one learns *dynamics*, and the terrain is in there.
 
-## 실습 목록
+## Exercise list
 
-| # | 실습 | 레벨 | 방식 | 검사 |
+| # | Exercise | Level | Format | Checks |
 |:---:|---|:---:|---|:---:|
-| 01 | [`task01_vae`](task01_vae/) | **L3** | 독립 스크립트 | 20 |
-| 02 | [`cenet-forward`](cenet-forward/) | **L2** | 실제 `cenet.py` | 18 |
-| 03 | [`cenet-loss`](cenet-loss/) | **L2** | 실제 `cenet.py` | 14 |
-| 04 | [`runner-augment`](runner-augment/) | **L2** | 실제 `dreamwaq_runner.py` | 12 |
+| 01 | [`task01_vae`](task01_vae/) | **L3** | Standalone script | 20 |
+| 02 | [`cenet-forward`](cenet-forward/) | **L2** | Real `cenet.py` | 18 |
+| 03 | [`cenet-loss`](cenet-loss/) | **L2** | Real `cenet.py` | 14 |
+| 04 | [`runner-augment`](runner-augment/) | **L2** | Real `dreamwaq_runner.py` | 12 |
 
-02~04 는 `dreamwaq_manager/` 의 **프로덕션 소스를 그대로 잘라** 만든 것이다
-(`exercises/specs/*.toml`). 소스는 한 글자도 건드리지 않는다.
+02–04 were made by **cutting the production source of `dreamwaq_manager/` as-is**
+(`exercises/specs/*.toml`). Not a single character of the source is touched.
 
-## 순서를 지킨다
+## Stick to the order
 
 `task01_vae` → `cenet-forward` → `cenet-loss` → `runner-augment`.
 
-01 을 건너뛰고 02 로 가면 reparameterization trick 을 실제 코드 안에서 처음 만나게 된다.
-toy 에서 한 번 손으로 써 보고 가는 편이 훨씬 빠르다.
+If you skip 01 and go to 02, you'll meet the reparameterization trick for the first time inside real code.
+It's much faster to write it by hand once on the toy first.
 
-## 검증
+## Checks
 
-전부 Isaac Sim 없이 1초 안에 끝난다. 다만 **번들 kit python 으로 돌려야 한다** —
-시스템 `python3` 에는 torch 가 없다.
+All finish within 1 second without Isaac Sim. But **they must be run with the bundled kit python** —
+the system `python3` doesn't have torch.
 
 ```bash
 PY=~/IsaacLab/_isaac_sim/python.sh
@@ -66,9 +66,9 @@ cd ../cenet-loss      && $PY check.py
 cd ../runner-augment  && $PY check.py
 ```
 
-`--solution` 을 붙이면 완성본(프로덕션 소스)을 검사한다. 검사기가 이상하다 싶을 때 쓴다.
+Add `--solution` to check the finished version (production source). Use it when the checker seems off.
 
-starter 가 없다면 생성한다.
+If the starter doesn't exist, generate it.
 
 ```bash
 python3 exercises/tools/make_exercise.py --id vae-core
@@ -77,20 +77,20 @@ python3 exercises/tools/make_exercise.py --id cenet-loss
 python3 exercises/tools/make_exercise.py --id runner-augment
 ```
 
-## 다 하고 나면
+## When you're done
 
-Waq task 가 실제로 돈다. Base(45) 와 달리 actor 가 64 차원을 받는다.
+The Waq task actually runs. Unlike Base (45), the actor receives 64 dims.
 
-> **아래 명령이 도는 것은 내가 채운 `starter/cenet.py` 가 아니다.** 이 stage 의 `starter/` 는
-> 프로덕션 소스를 잘라 만든 **읽기·연습용 사본**이고, `train.py` 가 import 하는 것은 설치된
-> 패키지 쪽 원본(`dreamwaq_manager/source/dreamwaq_manager/dreamwaq_manager/algorithms/`)이다.
-> 그래서 이 명령이 확인해 주는 것은 "**Waq 배선이 돈다**" 이지 "내 답이 맞다" 가 아니다 —
-> 내 답의 정오는 `check.py` 가 판정한다.
+> **What the command below runs is not the `starter/cenet.py` you filled in.** This stage's `starter/` is
+> a **read/practice copy** cut from the production source, and what `train.py` imports is the original
+> in the installed package (`dreamwaq_manager/source/dreamwaq_manager/dreamwaq_manager/algorithms/`).
+> So what this command confirms is "**the Waq wiring runs**", not "my answer is right" —
+> whether your answer is right is judged by `check.py`.
 >
-> 자기 답으로 진짜 학습을 돌려 보고 싶으면 프로덕션 소스의 **해당 함수 본문만** 자기 것으로
-> 바꾼다. starter 파일을 통째로 복사해 덮으면 실습을 만들며 가려 둔 것(`DWQ_CENET_*` 실험
-> 게이트, 잠재 진단 로깅 `cenet_kl_active_dims` / `cenet_kl_nats` / `cenet_dec_w_*`)까지
-> 함께 지워진다. 되돌릴 때는 `git checkout` 이 있다.
+> If you want to run real training with your own answer, replace **only the corresponding function body** in the production source
+> with yours. Copying the whole starter file over it also wipes out what was hidden when making the exercise (the `DWQ_CENET_*` experiment
+> gates, the latent diagnostic logging `cenet_kl_active_dims` / `cenet_kl_nats` / `cenet_dec_w_*`).
+> To revert, there is `git checkout`.
 
 ```bash
 cd dreamwaq_manager
@@ -98,11 +98,11 @@ python scripts/rsl_rl/train.py --task=DreamWaQ-Waq-Official-Rough-PPO-v0 \
     --headless --num_envs=64 --max_iterations=30
 ```
 
-> **`-Official-` 이 처음 보이는 이유.** repo 에는 env 레시피가 두 벌 있다. 논문 보상을
-> 그대로 옮긴 `DreamWaQ-Manager-Go2-*` 레시피는 **걷지 못해 폐기됐고**(몸통 접촉 종료 78%),
-> 실제 학습·비교는 Isaac Lab 공식 Go2 보상을 쓰는 `*-Official-*` 계열로 돌린다.
-> CENet 코드는 양쪽이 동일하므로 이 stage 에서 쓴 것이 그대로 들어간다.
-> 대조표는 [`PAPER.md`](../../PAPER.md) §0 과 루트 [`README.md`](../../README.md) 의 Task 절에 있다.
+> **Why `-Official-` shows up for the first time.** The repo has two env recipes. The `DreamWaQ-Manager-Go2-*` recipe,
+> which copies the paper's rewards as-is, **was abandoned because it couldn't walk** (78% base-contact terminations),
+> and actual training and comparisons are run with the `*-Official-*` family, which uses Isaac Lab's official Go2 rewards.
+> The CENet code is identical on both sides, so what you wrote in this stage goes in as-is.
+> The comparison table is in §0 of [`PAPER.md`](../../PAPER.md) and the Task section of the root [`README.md`](../../README.md).
 
-**여기서 확인할 것은 "성능" 이 아니라 "돌아간다" 뿐이다.** 제대로 된 비교는
-강사가 미리 돌려 둔 **4000 iteration** 산출물로 Stage 5 에서 한다.
+**All you're checking here is "it runs", not "performance".** The proper comparison
+is done in Stage 5 with the **4000-iteration** outputs the instructor ran in advance.

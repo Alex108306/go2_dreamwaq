@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""빠른 검증 — direct-dones.  (Isaac Sim 불필요, ~2초)
+"""Fast check — direct-dones.  (no Isaac Sim needed, ~2 s)
 
-`DreamWaQEnv._get_dones` 를 가짜 `self` 로 직접 호출한다.
+Calls `DreamWaQEnv._get_dones` directly with a fake `self`.
 
     python check.py                 # starter/dreamwaq_env.py
-    python check.py --solution      # 완성본
+    python check.py --solution      # finished version
 """
 from __future__ import annotations
 
@@ -25,8 +25,8 @@ STARTER = HERE / "starter" / "dreamwaq_env.py"
 
 N = 4                 # envs
 HIST = 3              # contact sensor history_length
-BODIES = 5            # 몸통 1 + 발 4 라고 하자
-BASE_IDS = [0]        # _termination_contact_ids — 몸통만
+BODIES = 5            # say, 1 base + 4 feet
+BASE_IDS = [0]        # _termination_contact_ids — base only
 MAX_EP = 1000
 THRESHOLD = 1.0
 
@@ -36,7 +36,7 @@ class Cfg:
 
 
 class FakeSelf:
-    """_get_dones 가 만지는 것만 갖춘 최소 객체."""
+    """Minimal object with only what _get_dones touches."""
 
     def __init__(self, forces: torch.Tensor, ep_len: torch.Tensor):
         data = type("D", (), {"net_forces_w_history": type("W", (), {"torch": forces})()})()
@@ -49,21 +49,21 @@ class FakeSelf:
 
 
 def make(force_at=None, ep_len=None):
-    """force_at: {(env, hist, body): 힘크기} — 지정한 곳에만 힘을 준다."""
+    """force_at: {(env, hist, body): force magnitude} — applies force only where specified."""
     forces = torch.zeros(N, HIST, BODIES, 3)
     for (e, h, b), mag in (force_at or {}).items():
-        forces[e, h, b, 2] = mag  # z 방향 힘
+        forces[e, h, b, 2] = mag  # force in the z direction
     ep = torch.zeros(N, dtype=torch.long) if ep_len is None else ep_len
     return FakeSelf(forces, ep)
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--solution", action="store_true", help="완성본을 검사한다")
+    ap.add_argument("--solution", action="store_true", help="check the finished version")
     args = ap.parse_args()
 
     path = SOLUTION if args.solution else STARTER
-    print(f"검사 대상: {path.relative_to(REPO_ROOT)}\n")
+    print(f"Checking: {path.relative_to(REPO_ROOT)}\n")
     mod = load_module(path, extra_paths=(str(SRC_DIR),))
     get_dones = mod.DreamWaQEnv._get_dones
 
@@ -75,71 +75,71 @@ def main() -> int:
         if not cond:
             failures.append(name)
 
-    # --- 1. 아무 일도 없으면 둘 다 False ------------------------------------------
+    # --- 1. If nothing happens, both are False ------------------------------------------
     try:
         contact, timeout = get_dones(make())
     except NotImplementedError:
-        print("  아직 TODO(direct-dones) 가 비어 있다. starter/dreamwaq_env.py 를 채운다.")
+        print("  TODO(direct-dones) is still empty. Fill in starter/dreamwaq_env.py.")
         return 1
 
-    check("1. 반환 shape 이 (num_envs,) 두 개다",
+    check("1. returns two tensors of shape (num_envs,)",
           tuple(contact.shape) == (N,) and tuple(timeout.shape) == (N,),
           f"contact {tuple(contact.shape)}, timeout {tuple(timeout.shape)}")
-    check("1. 힘도 없고 시간도 안 됐으면 둘 다 False",
+    check("1. with no force and no timeout, both are False",
           not contact.any() and not timeout.any())
 
-    # --- 2. 시간 초과 ---------------------------------------------------------------
+    # --- 2. Timeout ---------------------------------------------------------------
     ep = torch.tensor([0, MAX_EP - 2, MAX_EP - 1, MAX_EP])
     _, timeout = get_dones(make(ep_len=ep))
-    check("2. episode_length >= max-1 인 env 만 timeout",
+    check("2. only envs with episode_length >= max-1 time out",
           timeout.tolist() == [False, False, True, True], f"{timeout.tolist()}")
 
-    # --- 3. 몸통 접촉 ---------------------------------------------------------------
+    # --- 3. Base contact ---------------------------------------------------------------
     contact, _ = get_dones(make({(1, 0, 0): 5.0}))
-    check("3. 몸통에 임계값 초과 힘이 걸린 env 만 종료",
+    check("3. only envs with a force above the threshold on the base terminate",
           contact.tolist() == [False, True, False, False], f"{contact.tolist()}")
 
-    # --- 4. 임계값 경계 --------------------------------------------------------------
-    # 원본은 > 1.0 이다. 정확히 1.0 은 종료가 아니다.
+    # --- 4. Threshold boundary --------------------------------------------------------------
+    # The original uses > 1.0. Exactly 1.0 is not a termination.
     contact, _ = get_dones(make({(0, 0, 0): THRESHOLD}))
-    check("4. 정확히 임계값이면 종료가 아니다 (> 이지 >= 가 아니다)",
+    check("4. exactly at the threshold is not a termination (> not >=)",
           not contact[0], f"{contact.tolist()}")
     contact, _ = get_dones(make({(0, 0, 0): THRESHOLD + 0.01}))
-    check("4. 임계값을 조금이라도 넘으면 종료", bool(contact[0]))
+    check("4. exceeding the threshold even slightly terminates", bool(contact[0]))
 
-    # --- 5. history 는 최대값으로 본다 -------------------------------------------------
-    # 3 프레임 중 한 프레임에서만 세게 부딪힌 경우. 평균을 쓰면 놓친다.
+    # --- 5. history is judged by its max -------------------------------------------------
+    # Case where it hit hard in only one of the 3 frames. Using the mean misses it.
     contact, _ = get_dones(make({(2, 1, 0): 9.0}))
-    check("5. history 3 중 한 프레임만 부딪혀도 종료 (max, 평균이 아니다)",
+    check("5. hitting in just one of the 3 history frames terminates (max, not mean)",
           bool(contact[2]), f"{contact.tolist()}")
 
-    # --- 6. 몸통이 아닌 바디는 무시한다 --------------------------------------------------
-    # 발(body 1~4)에 큰 힘이 걸리는 것은 정상 보행이다. 이걸로 종료하면 걷지를 못한다.
+    # --- 6. Bodies other than the base are ignored --------------------------------------------------
+    # Large forces on the feet (bodies 1–4) are normal walking. Terminating on them means it can't walk.
     contact, _ = get_dones(make({(0, 0, 1): 500.0, (1, 2, 4): 500.0}))
-    check("6. 발 접촉은 종료가 아니다 (_termination_contact_ids 로 골라낸다)",
+    check("6. foot contact is not a termination (filtered with _termination_contact_ids)",
           not contact.any(), f"{contact.tolist()}")
 
-    # --- 7. 힘은 벡터 크기로 잰다 ---------------------------------------------------------
-    # 성분별이 아니라 norm 이어야 한다. (0.8, 0.8, 0.8) 은 각 성분은 1 미만이지만 norm 은 1.39 다.
+    # --- 7. Force is measured as vector magnitude ---------------------------------------------------------
+    # It must be the norm, not per component. (0.8, 0.8, 0.8) has each component below 1 but a norm of 1.39.
     forces = torch.zeros(N, HIST, BODIES, 3)
     forces[3, 0, 0] = torch.tensor([0.8, 0.8, 0.8])
     contact, _ = get_dones(FakeSelf(forces, torch.zeros(N, dtype=torch.long)))
-    check("7. 힘은 성분이 아니라 벡터 norm 으로 잰다",
-          bool(contact[3]), f"norm={float(torch.linalg.norm(forces[3, 0, 0])):.3f} 인데 {contact.tolist()}")
+    check("7. force is measured as the vector norm, not per component",
+          bool(contact[3]), f"norm={float(torch.linalg.norm(forces[3, 0, 0])):.3f} but got {contact.tolist()}")
 
-    # --- 8. 둘은 독립이다 -------------------------------------------------------------
+    # --- 8. The two are independent -------------------------------------------------------------
     ep = torch.tensor([MAX_EP, 0, 0, 0])
     contact, timeout = get_dones(make({(1, 0, 0): 5.0}, ep_len=ep))
-    check("8. timeout 과 base_contact 는 서로 영향을 주지 않는다",
+    check("8. timeout and base_contact don't affect each other",
           timeout.tolist() == [True, False, False, False]
           and contact.tolist() == [False, True, False, False],
           f"timeout {timeout.tolist()}, contact {contact.tolist()}")
 
     print()
     if failures:
-        print(f"\033[1;31m{len(failures)}개 실패\033[0m: {', '.join(failures)}")
+        print(f"\033[1;31m{len(failures)} failed\033[0m: {', '.join(failures)}")
         return 1
-    print("\033[1;32m전부 통과.\033[0m Stage 2 실습을 모두 마쳤다.")
+    print("\033[1;32mAll passed.\033[0m You've finished all the Stage 2 exercises.")
     return 0
 
 

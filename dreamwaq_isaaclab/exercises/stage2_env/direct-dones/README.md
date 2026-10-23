@@ -1,113 +1,113 @@
-# direct-dones — 종료 조건  `L2 · BUILD`
+# direct-dones — Termination conditions  `L2 · BUILD`
 
-**Stage 2 · 학습 Env 클래스**
+**Stage 2 · Training Env class**
 
-## 목표
+## Goal
 
-에피소드를 언제 끝낼지 정한다. 두 가지다.
+Decide when to end an episode. There are two cases.
 
-| | 무엇 | 성격 |
+| | What | Nature |
 |---|---|---|
-| `time_out` | 정해진 스텝 수를 다 썼다 | **성공적 종료** — 부트스트랩해야 한다 |
-| `base_contact` | 몸통이 바닥에 닿았다 = 넘어졌다 | **실패 종료** |
+| `time_out` | Used up the allotted number of steps | **Successful termination** — must bootstrap |
+| `base_contact` | The base touched the ground = fell over | **Failure termination** |
 
-이 둘을 구분하는 것이 중요하다. 시간이 다 돼서 끊긴 에피소드의 마지막 상태는 "나쁜 상태"가
-아니다. 그래서 `_get_dones` 는 둘을 **따로** 반환하고, 학습기는 timeout 에 대해서만
-가치를 부트스트랩한다. 하나로 합쳐 버리면 "오래 살아남는 것" 자체에 잘못된 페널티가 붙는다.
+Distinguishing the two is important. The last state of an episode cut off because time ran out is not a "bad state".
+So `_get_dones` returns the two **separately**, and the learner bootstraps the value
+only for timeouts. If you merge them into one, a wrong penalty gets attached to "surviving long" itself.
 
-## 왜 몸통 접촉인가
+## Why base contact
 
-원본 IsaacGym DreamWaQ 의 `legged_robot.py:check_termination` 과 **완전히 같다.**
+It is **exactly the same** as `legged_robot.py:check_termination` in the original IsaacGym DreamWaQ.
 
 ```
 reset_buf = any( norm(contact_forces[:, termination_contact_indices, :]) > 1.0 )
 ```
 
-`terminate_after_contacts_on = ["base"]`, 임계값 `1.0 N`. Manager 스택은
-`mdp.illegal_contact` 로 같은 바디·같은 임계값을 쓴다. **두 스택과 원본이 모두 일치한다.**
+`terminate_after_contacts_on = ["base"]`, threshold `1.0 N`. The Manager stack
+uses the same body and threshold via `mdp.illegal_contact`. **Both stacks and the original all agree.**
 
-임계값 1 N 은 매우 낮다 — Go2 몸통이 무언가에 스치기만 해도 종료다. 넘어진 뒤에 버둥거리며
-보상을 긁어모으는 것을 막으려는 것이다.
+A 1 N threshold is very low — the Go2 base merely brushing against something terminates the episode. It's meant to stop the robot
+from flailing around after falling and scraping up reward.
 
-## 채울 곳
+## What to fill in
 
 ```
-starter/dreamwaq_env.py  →  DreamWaQEnv._get_dones()  안의  TODO(direct-dones)
+starter/dreamwaq_env.py  →  TODO(direct-dones)  inside  DreamWaQEnv._get_dones()
 ```
 
-주어진 것:
+Given:
 
-| | shape / 의미 |
+| | shape / meaning |
 |---|---|
-| `self.episode_length_buf` | `(N,)` 각 env 가 현재 에피소드에서 밟은 스텝 수 |
-| `self.max_episode_length` | 최대 스텝 수 |
-| `self._contact_sensor.data.net_forces_w_history.torch` | `(N, 3, bodies, 3)` — history 3 프레임 |
-| `self._termination_contact_ids` | 몸통(base) 바디 인덱스 |
+| `self.episode_length_buf` | `(N,)` number of steps each env has taken in the current episode |
+| `self.max_episode_length` | maximum number of steps |
+| `self._contact_sensor.data.net_forces_w_history.torch` | `(N, 3, bodies, 3)` — 3 history frames |
+| `self._termination_contact_ids` | base body indices |
 | `self.cfg.termination_contact_force` | `1.0` |
 
-`base_contact`, `time_out` 두 변수를 만들면 아래 코드가 알아서 반환한다.
+Create the two variables `base_contact` and `time_out`, and the code below returns them.
 
-## 축 줄이기가 이 실습의 전부다
+## Reducing axes is all there is to this exercise
 
-`net_forces_w_history` 는 4차원이다. 이것을 `(N,)` 불리언으로 줄여야 한다.
+`net_forces_w_history` is 4-dimensional. You must reduce it to an `(N,)` boolean.
 
 ```
-(N, history=3, bodies, 3)   힘 벡터
-  → norm(dim=-1)            (N, 3, bodies)     크기로 바꾼다
-  → max(dim=1)[0]           (N, bodies)        history 중 최대
-  → > threshold             (N, bodies)        불리언
-  → any(dim=1)              (N,)               바디 중 하나라도
+(N, history=3, bodies, 3)   force vectors
+  → norm(dim=-1)            (N, 3, bodies)     convert to magnitude
+  → max(dim=1)[0]           (N, bodies)        max over history
+  → > threshold             (N, bodies)        boolean
+  → any(dim=1)              (N,)               any of the bodies
 ```
 
-**history 는 평균이 아니라 최대**를 쓴다. 3 프레임 중 한 번이라도 세게 부딪혔으면 넘어진 것이다.
-평균을 쓰면 짧고 강한 충돌을 놓친다.
+**Use the max over history, not the mean.** If it hit hard even once in the 3 frames, it fell.
+Using the mean misses short, strong impacts.
 
-## 검증
+## Checks
 
 ```bash
 cd exercises/stage2_env/direct-dones
-python check.py            # 빠른 검증 — Isaac Sim 불필요, 2초
+python check.py            # fast check — no Isaac Sim needed, 2 s
 ```
 
-통과 기준 (10개):
+Pass criteria (10):
 
-1. 반환이 `(N,)` 두 개, 아무 일 없으면 둘 다 `False`
-2. `episode_length >= max - 1` 인 env 만 timeout
-3. 몸통에 임계값 초과 힘이 걸린 env 만 종료
-4. **정확히 임계값이면 종료가 아니다** — `>` 이지 `>=` 가 아니다
-5. **history 3 중 한 프레임만 부딪혀도 종료** — 평균을 쓰면 걸린다
-6. **발 접촉은 종료가 아니다** — 이걸 놓치면 로봇이 첫 걸음에 죽는다
-7. **힘은 성분이 아니라 벡터 norm** — `(0.8, 0.8, 0.8)` 은 성분은 다 1 미만이지만 norm 은 1.39 다
-8. timeout 과 base_contact 는 서로 영향을 주지 않는다
+1. Returns two `(N,)` tensors; if nothing happens both are `False`
+2. Only envs with `episode_length >= max - 1` time out
+3. Only envs with a force above the threshold on the base terminate
+4. **Exactly at the threshold is not a termination** — it's `>`, not `>=`
+5. **Hitting in just one of the 3 history frames terminates** — using the mean gets caught
+6. **Foot contact is not a termination** — miss this and the robot dies on its first step
+7. **Force is the vector norm, not the components** — `(0.8, 0.8, 0.8)` has every component below 1 but its norm is 1.39
+8. timeout and base_contact don't affect each other
 
-## 힌트
+## Hints
 
 <details>
-<summary>왜 max_episode_length - 1 인가</summary>
+<summary>Why max_episode_length - 1</summary>
 
-`episode_length_buf` 는 0 부터 센다. `max_episode_length = 1000` 이면 유효한 스텝 인덱스는
-`0..999` 다. 그래서 `>= 999` 에서 끊어야 정확히 1000 스텝이 된다.
-`>= max_episode_length` 로 쓰면 한 스텝을 더 밟는다.
+`episode_length_buf` counts from 0. If `max_episode_length = 1000`, the valid step indices are
+`0..999`. So cutting at `>= 999` gives exactly 1000 steps.
+Writing `>= max_episode_length` takes one extra step.
 </details>
 
 <details>
-<summary>`.torch` 는 왜 붙는가</summary>
+<summary>Why `.torch` is attached</summary>
 
-Isaac Lab 의 센서 데이터는 warp 배열(`ProxyArray`)로 올 수 있다. `.torch` 가 torch 텐서로
-바꿔 준다. 이걸 빼면 이후 `torch.linalg.norm` 에서 타입 오류가 난다.
+Isaac Lab sensor data can come as a warp array (`ProxyArray`). `.torch` converts it to a torch tensor.
+Leave it out and you get a type error later in `torch.linalg.norm`.
 </details>
 
 <details>
-<summary>발 접촉을 걸러내는 법</summary>
+<summary>How to filter out foot contact</summary>
 
-`self._termination_contact_ids` 로 **인덱싱 먼저** 한다.
-`net_contact_forces[:, :, self._termination_contact_ids]` 로 몸통 바디만 남긴 뒤에
-축을 줄인다. 전부 다 줄인 다음 고르려 하면 이미 정보가 뭉개져 있다.
+**Index first** with `self._termination_contact_ids`.
+Keep only the base body with `net_contact_forces[:, :, self._termination_contact_ids]`, then
+reduce the axes. If you try to select after reducing everything, the information is already smeared together.
 </details>
 
-## Manager 쪽은 어떻게 하나
+## How does the Manager side do it
 
-같은 일을 config 한 줄로 한다.
+It does the same thing with one line of config.
 
 ```python
 base_contact = DoneTerm(
@@ -117,11 +117,11 @@ base_contact = DoneTerm(
 )
 ```
 
-`mdp.illegal_contact` 안을 열어 보면 위에서 쓴 것과 **같은 축 줄이기**가 들어 있다.
-Direct 는 그것을 직접 쓰고, Manager 는 이미 있는 항을 골라 쓴다 — 이것이 두 API 의 차이다.
+If you open up `mdp.illegal_contact`, it contains **the same axis reduction** as written above.
+Direct writes it directly, while Manager picks an existing term — that's the difference between the two APIs.
 
-Manager 쪽에 실습이 없는 이유는 [Stage 2 README](../README.md) 를 본다.
+For why there's no exercise on the Manager side, see the [Stage 2 README](../README.md).
 
-## 다음
+## Next
 
-Stage 2 완료다. [Stage 3 — PPO](../../stage3_ppo/) 로 간다.
+Stage 2 is complete. Go to [Stage 3 — PPO](../../stage3_ppo/).

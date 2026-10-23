@@ -30,12 +30,12 @@ def joint_power_l1(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEnti
 def power_distribution_l2(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
     """Penalize uneven power distribution across joints: var(torque * velocity)^2."""
     # ── TODO(reward-power-distribution) ─ level L2 ─────────────────────────────
-    # 관절 간 파워 분포의 불균형 페널티를 완성한다: var(토크 x 각속도)^2
-    #   hint: 이번에는 절댓값을 쓰지 않는다 — 부호 있는 파워 그대로의 분산이다
-    #   hint: 합이 아니라 관절 축(dim=-1)의 분산을 본다: torch.var
-    #   hint: 분산을 한 번 더 제곱한다 (논문 Table I: var(tau . theta_dot)^2)
-    #   hint: 모든 관절이 같은 파워를 쓰면 분산이 0 이므로 페널티가 0 이 되어야 한다
-    # 통과 기준은 이 실습 폴더의 README.md 를 본다.
+    # Complete the penalty for imbalanced power distribution across joints: var(torque x angular velocity)^2
+    #   hint: This time don't take the absolute value — it's the variance of the signed power as-is
+    #   hint: Look at the variance over the joint axis (dim=-1), not the sum: torch.var
+    #   hint: Square the variance once more (paper Table I: var(tau . theta_dot)^2)
+    #   hint: If all joints use the same power, the variance is 0, so the penalty must be 0
+    # For the pass criteria, see README.md in this exercise folder.
     raise NotImplementedError("TODO(reward-power-distribution)")
     # ─────────────────────────────────────────────────────────────────────
 

@@ -1,60 +1,60 @@
-# task04 — 지형 생성과 env_origins  `L1 · FILL`
+# task04 — Terrain generation and env_origins  `L1 · FILL`
 
-## 목표
+## Goal
 
-무한 평면을 벗어난다. DreamWaQ 의 "implicit terrain imagination" 은
-울퉁불퉁한 지형이 있어야 의미가 생긴다.
+Leave the infinite plane. DreamWaQ's "implicit terrain imagination"
+only becomes meaningful on bumpy terrain.
 
 ```
-terrain_type="plane"      단일 무한 평면. 가볍고 디버깅에 좋다
-terrain_type="generator"  sub-terrain 타일을 num_rows x num_cols 격자로 생성
+terrain_type="plane"      a single infinite plane. Lightweight and good for debugging
+terrain_type="generator"  generates sub-terrain tiles in a num_rows x num_cols grid
 ```
 
-**격자의 행(row)이 난이도다.** 이것이 지형 커리큘럼의 토대다.
+**The grid's row is the difficulty.** This is the foundation of the terrain curriculum.
 
-## 채울 곳
+## What to fill in
 
-`starter.py` 의 `TODO(terrain-cfg)` — `TerrainImporterCfg` 구성 5~8줄.
+`TODO(terrain-cfg)` in `starter.py` — 5–8 lines configuring a `TerrainImporterCfg`.
 
-| 항목 | 값 | 왜 |
+| Item | Value | Why |
 |---|---|---|
-| `prim_path` | `"/World/ground"` | height scanner 가 이 경로를 mesh 로 참조한다 |
+| `prim_path` | `"/World/ground"` | The height scanner references this path as its mesh |
 | `terrain_type` | `"generator"` | |
-| `terrain_generator` | `ROUGH_TERRAINS_CFG.copy()` | 원본을 고치면 안 된다 |
-| `collision_group` | `-1` | 전역 그룹 — 모든 env 가 이 지형과 충돌한다 |
+| `terrain_generator` | `ROUGH_TERRAINS_CFG.copy()` | The original must not be modified |
+| `collision_group` | `-1` | Global group — every env collides with this terrain |
 | `num_rows` / `num_cols` | `5` / `5` | |
 
-## 실행
+## Run
 
 ```bash
 python starter.py
-python solution.py --viz kit   # 지형 격자 보기
+python solution.py --viz kit   # view the terrain grid
 ```
 
-## 통과 기준
+## Pass criteria
 
-1. `env_origins` 가 `(num_envs, 3)` 모양
-2. 원점들이 격자에 흩어져 있다 (한 점에 몰려 있지 않다)
-3. sub-terrain 이 4종 이상
+1. `env_origins` has shape `(num_envs, 3)`
+2. The origins are spread across the grid (not bunched at one point)
+3. At least 4 sub-terrain types
 4. `curriculum=True`
 
-## 실행하면 나오는 것
+## What you get when you run it
 
-`ROUGH_TERRAINS_CFG` 의 구성:
+Composition of `ROUGH_TERRAINS_CFG`:
 
-| sub-terrain | 비율 |
+| sub-terrain | Proportion |
 |---|---:|
 | `pyramid_stairs` / `pyramid_stairs_inv` | 0.20 / 0.20 |
 | `boxes` | 0.20 |
 | `random_rough` | 0.20 |
 | `hf_pyramid_slope` / `_inv` | 0.10 / 0.10 |
 
-`env_origins` 의 z 범위가 `[-1.38, +0.71] m` 로 벌어진다 — 타일마다 높이가 다르다.
-**스폰 높이 0.42 m 의 근거가 여기 있다.** `boxes` 가 최대 0.1 m 이고
-리셋 시 xy 를 ±0.5 m 흔들기 때문에, 낮게 스폰하면 지형에 박힌다.
+The z range of `env_origins` spreads to `[-1.38, +0.71] m` — each tile has a different height.
+**This is the rationale for the 0.42 m spawn height.** `boxes` are up to 0.1 m and
+xy is jittered by ±0.5 m on reset, so spawning low gets the robot stuck in the terrain.
 
-## 커리큘럼과의 연결
+## Connection to the curriculum
 
-학습 중 `mdp.terrain_levels_vel` 이 잘 걷는 로봇을 윗행으로, 못 걷는 로봇을
-아랫행으로 옮긴다. 학습 로그의 **`Curriculum/terrain_levels`** 가 바로 이 행 번호의
-평균이다 — Stage 5 에서 이 곡선을 읽는다.
+During training `mdp.terrain_levels_vel` moves robots that walk well to higher rows and those that don't
+to lower rows. **`Curriculum/terrain_levels`** in the training log is exactly the mean of this
+row index — you'll read this curve in Stage 5.

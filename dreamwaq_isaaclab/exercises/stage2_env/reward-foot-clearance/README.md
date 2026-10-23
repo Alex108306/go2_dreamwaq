@@ -1,60 +1,60 @@
-# reward-foot-clearance — 발 들기 페널티  `L2 · BUILD`
+# reward-foot-clearance — Foot lifting penalty  `L2 · BUILD`
 
-## 목표
+## Goal
 
-로봇이 발을 **끌지 않고 들어서** 옮기게 만드는 항을 만든다.
+Build a term that makes the robot move its feet by **lifting them rather than dragging**.
 
 ```
-reward = sum_feet (지형위_발높이 - 0.12)^2 * 측면속도
+reward = sum_feet (foot_height_above_terrain - 0.12)^2 * lateral_velocity
 ```
 
-원본 IsaacGym (`legged_robot.py:_reward_foot_clearance`)과 같은 형태다.
+Same form as the original IsaacGym (`legged_robot.py:_reward_foot_clearance`).
 
-## 채울 곳
+## What to fill in
 
-`starter/rewards.py` 의 `TODO(reward-foot-clearance)` — `foot_clearance_l2` 본문.
+`TODO(reward-foot-clearance)` in `starter/rewards.py` — the body of `foot_clearance_l2`.
 
-## 설계 포인트 세 가지
+## Three design points
 
-**1. 월드 z 가 아니라 "지형 위 높이"**
+**1. "Height above terrain", not world z**
 
-`body_pos_w[:, :, 2]` 를 그대로 쓰면 언덕 위 로봇과 계곡 로봇이 전혀 다른 값을 받는다.
-Stage 1 task05 의 height scan 과 같은 발상으로, height scanner 의 ray hit 평균을
-지형 높이로 근사해 뺀다.
+Using `body_pos_w[:, :, 2]` as-is gives completely different values to a robot on a hill and a robot in a valley.
+With the same idea as Stage 1 task05's height scan, approximate the terrain height with the mean of the height scanner's ray hits
+and subtract it.
 
-> 원본은 발마다 지형 높이를 따로 샘플링한다. IsaacLab 으로 하려면 RayCaster 4개가
-> 더 필요해서, 여기서는 몸통 아래 스캐너의 평균으로 근사한다 — 평지에서는 정확하고
-> 경사에서는 근사다. `base_height_l2` 도 같은 근사를 쓴다.
+> The original samples terrain height separately for each foot. Doing that in IsaacLab would need 4 more RayCasters,
+> so here it is approximated with the mean of the scanner under the base — exact on flat ground,
+> approximate on slopes. `base_height_l2` uses the same approximation.
 
-**2. 왜 측면속도로 가중하는가**
+**2. Why weight by lateral velocity**
 
-발을 **옮기는 중**일 때만 클리어런스를 요구한다. 딛고 서 있는 발(속도 0)은
-높이가 목표와 달라도 벌하지 않는다. 이 가중이 없으면 로봇이 네 발을 다 든 채
-서 있으려 한다.
+Clearance is demanded only while the foot is **being moved**. A planted foot (velocity 0)
+is not penalized even if its height differs from the target. Without this weighting the robot tries to stand
+with all four feet lifted.
 
-z 속도는 넣지 않는다 — 수직으로 오르내리는 것 자체는 벌할 이유가 없다.
+z velocity is not included — moving vertically up and down is no reason to penalize in itself.
 
-**3. ray hit 은 오염될 수 있다**
+**3. Ray hits can be contaminated**
 
-광선이 아무것도 못 맞으면 `NaN`/`inf` 가 나온다. 그대로 평균 내면 보상 전체가
-`NaN` 이 되고 학습이 조용히 망가진다. `torch.nan_to_num` 으로 정리한다.
+If a ray hits nothing, you get `NaN`/`inf`. Averaging that as-is makes the whole reward
+`NaN` and training silently breaks. Clean it up with `torch.nan_to_num`.
 
-## 검증
+## Checks
 
 ```bash
 python check.py
 ```
 
-| # | 통과 기준 |
+| # | Pass criterion |
 |:---:|---|
-| 1 | 반환이 `(num_envs,)` |
-| 2 | 발이 정확히 목표 높이면 페널티 0 |
-| 3 | **측면속도 0 이면 페널티 0** (딛고 선 발) |
-| 4 | 높이 0 / 속도 1 / 발 4개 → `4 × 0.12² = 0.0576` |
-| 5 | 페널티가 측면속도에 선형 비례 |
-| 6 | **지형 높이를 빼서 '지형 위 높이'로 본다** |
-| 7 | ray hit 의 NaN/inf 를 0 으로 정리한다 |
-| 8 | 측면속도에 z 성분을 넣지 않았다 |
-| 9 | 센서가 `None` 이면 월드 z 폴백 |
+| 1 | Returns `(num_envs,)` |
+| 2 | Penalty 0 when the feet are exactly at the target height |
+| 3 | **Penalty 0 when lateral velocity is 0** (planted foot) |
+| 4 | height 0 / velocity 1 / 4 feet → `4 × 0.12² = 0.0576` |
+| 5 | The penalty is linearly proportional to lateral velocity |
+| 6 | **Subtracts terrain height to use 'height above terrain'** |
+| 7 | Cleans NaN/inf in ray hits to 0 |
+| 8 | Doesn't include the z component in lateral velocity |
+| 9 | Falls back to world z if the sensor is `None` |
 
-6·7·8이 이 실습의 핵심이다. 나머지는 식만 맞으면 통과한다.
+6·7·8 are the core of this exercise. The rest pass as long as the formula is right.

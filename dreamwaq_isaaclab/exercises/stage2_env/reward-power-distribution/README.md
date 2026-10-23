@@ -1,83 +1,83 @@
-# reward-power-distribution — 파워 분포 페널티  `L2 · BUILD`
+# reward-power-distribution — Power distribution penalty  `L2 · BUILD`
 
-## 목표
+## Goal
 
-**특정 모터에만 부하가 쏠리는 것**을 벌한다.
+Penalize **load concentrating on particular motors**.
 
 ```
 reward = var_j(tau_j * theta_dot_j)^2
 ```
 
-논문 Table I 의 **Power distribution**. 앞 실습(`joint_power`)이 파워의 **총량**을 벌한다면,
-이 항은 관절 사이의 **불균형**을 벌한다.
+**Power distribution** in Table I of the paper. Whereas the previous exercise (`joint_power`) penalizes the **total** power,
+this term penalizes the **imbalance** between joints.
 
-## 채울 곳
+## What to fill in
 
-`starter/rewards.py` 의 `TODO(reward-power-distribution)` — `power_distribution_l2` 본문.
+`TODO(reward-power-distribution)` in `starter/rewards.py` — the body of `power_distribution_l2`.
 
-**앞 실습과 다른 점 둘**
+**Two differences from the previous exercise**
 
-1. **절댓값을 쓰지 않는다** — 부호 있는 파워 그대로의 분산이다
-2. 합이 아니라 **관절 축(`dim=-1`)의 분산**을 보고, 그것을 **한 번 더 제곱**한다
+1. **No absolute value** — it's the variance of the signed power as-is
+2. Look at the **variance over the joint axis (`dim=-1`)**, not the sum, and **square it once more**
 
-## 검증
+## Checks
 
 ```bash
 python check.py
 ```
 
-| # | 통과 기준 |
+| # | Pass criterion |
 |:---:|---|
-| 1 | 반환이 `(num_envs,)` |
-| 2 | 모든 관절 파워가 같으면 0 |
-| 3 | **파워가 커도 균등하면 0** — 총량이 아니라 불균형을 본다 |
-| 4 | 알려진 분포에서 `var²` 값이 정확 |
-| 5 | **분산을 한 번 더 제곱했다** (`torch.square` 누락 탐지) |
-| 6 | **절댓값을 쓰지 않았다** |
-| 7 | `asset_cfg.joint_ids` 존중 |
+| 1 | Returns `(num_envs,)` |
+| 2 | 0 when all joint powers are equal |
+| 3 | **0 if uniform, even with large power** — it looks at imbalance, not the total |
+| 4 | The `var²` value is exact on a known distribution |
+| 5 | **The variance was squared once more** (detects a missing `torch.square`) |
+| 6 | **No absolute value was used** |
+| 7 | Respects `asset_cfg.joint_ids` |
 
-3번이 이 항의 정의 그 자체다. 5·6은 흔한 실수를 직접 겨냥한다.
+Number 3 is the very definition of this term. 5·6 directly target common mistakes.
 
-## 왜 이 항이 있는가 — 논문의 설명
+## Why this term exists — the paper's explanation
 
-논문 §II-B-4:
+Paper §II-B-4:
 
 > However, this reward minimizes the overall power without considering each motor's power usage
 > balance. Consequently, in the long run, some motors might overheat faster than others.
 > Therefore, we introduced a power distribution reward to **reduce motor overheating in the real
 > world** by penalizing motors' power with high variance over all motors used on the robot.
 
-시뮬레이터 안에서는 모터가 타지 않는다. **이 항은 실기 배포를 위한 것이다.**
-논문 §III-G의 실외 실험에서 언덕을 오를 때 "front legs' motors may easily overheat and
-enter the overheat protection mode" 라고 보고한 것과 이어진다.
+Motors don't burn out inside a simulator. **This term is for deployment on real hardware.**
+It connects to the paper's §III-G outdoor experiment, which reported that when climbing a hill "front legs' motors may easily overheat and
+enter the overheat protection mode".
 
-## 가중치에 얽힌 이야기 (읽어둘 것)
+## A story about the weight (worth reading)
 
-이 항의 가중치는 **논문과 저자 구현이 10배 다르다.**
+The weight of this term **differs by 10× between the paper and the authors' implementation.**
 
-| | 값 |
+| | Value |
 |---|---|
-| 논문 Table I | `−10⁻⁵` |
-| 저자의 `legged_gym` 설정 (`a1_config.py`) | `−1.0e−6` |
+| Paper Table I | `−10⁻⁵` |
+| Authors' `legged_gym` config (`a1_config.py`) | `−1.0e−6` |
 
-어느 쪽이 맞는가? 이 repo 는 처음에 논문 값을 썼다가 **재고 나서 `−1e−6` 으로 바꿨다.**
-근거가 셋이다.
+Which one is right? This repo first used the paper value, then **measured it and switched to `−1e−6`.**
+There are three reasons.
 
-1. **나머지 11항은 소수점까지 일치한다.** 그 설정 클래스에는 `"""SAME reward functions
-   with the paper"""` 라는 주석까지 붙어 있다. 12항 중 1항만 정확히 10배 어긋나는 것은
-   설계 변경보다 **인쇄 오타**로 읽는 쪽이 자연스럽다.
-2. **크기를 실제로 재 봤다.** 512 env × 300 step 프로브에서 가중치를 적용한 per-step `|r|`:
+1. **The other 11 terms match to the decimal.** That config class even has the comment `"""SAME reward functions
+   with the paper"""`. With only 1 of 12 terms off by exactly 10×, it's more natural to read it as
+   a **typo in print** than a design change.
+2. **We actually measured the magnitudes.** Weighted per-step `|r|` in a 512 env × 300 step probe:
 
-   | 항 | 평균 | 최대 |
+   | Term | Mean | Max |
    |---|---:|---:|
-   | `track_lin_vel_xy_exp` (추종, 이 env 의 주 목적) | 14.2 | 75 |
+   | `track_lin_vel_xy_exp` (tracking, the main objective of this env) | 14.2 | 75 |
    | `power_distribution` @ `−1e−5` | **16.2** | **8447** |
    | `power_distribution` @ `−1e−6` | 1.62 | 845 |
 
-   `−1e−5` 에서는 **페널티가 주 목적보다 크다.** 정규화 항이 아니라 지배 항이다.
-   `var(τ·θ̇)²` 는 토크·속도의 **4제곱** 스케일이라 이렇게 폭주한다.
-3. 실제로 `−1e−5` 로 학습하면 지형 커리큘럼이 오르지 않았다 (`PAPER.md` §2).
+   At `−1e−5` **the penalty is larger than the main objective.** It's a dominating term, not a regularizer.
+   `var(τ·θ̇)²` scales with the **4th power** of torque and velocity, so it blows up like this.
+3. In practice, training with `−1e−5` the terrain curriculum didn't rise (`PAPER.md` §2).
 
-**교훈은 "논문이 맞다"도 "코드가 맞다"도 아니다.** 둘이 다르면 **어느 쪽이 맞는지 재 보라**는
-것이다. 여기서는 항의 크기를 다른 항과 나란히 재 보는 것만으로 답이 나왔다.
-논문의 표를 그대로 옮기면 재현되리라는 가정이 이 프로젝트에서 여러 번 깨졌다.
+**The lesson is neither "the paper is right" nor "the code is right".** When the two differ, **measure which one is right**.
+Here, just measuring the term's magnitude side by side with the other terms gave the answer.
+The assumption that copying the paper's table as-is will reproduce the results broke several times in this project.

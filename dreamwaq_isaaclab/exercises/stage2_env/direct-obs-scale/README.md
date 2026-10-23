@@ -1,66 +1,66 @@
-# direct-obs-scale — 관측 스케일링  `L1 · FILL`
+# direct-obs-scale — Observation scaling  `L1 · FILL`
 
-**Stage 2 에서 유일하게 Direct 스택을 다루는 실습이다.** Manager 는 관측을 `ObsTerm`
-목록으로 선언하지만, Direct 는 `_get_observations` 안에서 텐서를 직접 조립한다.
-같은 일을 두 API 가 어떻게 다르게 하는지 보는 자리다.
+**This is the only Stage 2 exercise that deals with the Direct stack.** Manager declares observations as a list of
+`ObsTerm`s, but Direct assembles the tensors directly inside `_get_observations`.
+This is where you see how the two APIs do the same thing differently.
 
-## 목표
+## Goal
 
-관측의 각 그룹을 **O(1) 크기로 맞춘다.**
+**Bring each group of the observation to O(1) magnitude.**
 
 ```
 lin_vel   x 2.0     joint_pos x 1.0
 ang_vel   x 0.25    joint_vel x 0.05
-gravity, actions 는 이미 O(1) — 스케일하지 않는다
+gravity and actions are already O(1) — not scaled
 ```
 
-## 채울 곳
+## What to fill in
 
-`starter/dreamwaq_env.py` 의 `TODO(direct-obs-scale)` — 네 줄이다.
+`TODO(direct-obs-scale)` in `starter/dreamwaq_env.py` — four lines.
 
-## 왜 이게 중요한가 — 실제로 났던 버그
+## Why this matters — a bug that actually happened
 
-`debugging.qmd` 가 기록한 포팅 버그 #1 이다.
+This is porting bug #1 recorded in `debugging.qmd`.
 
-> **관측 스케일 누락** — raw `dof_vel`(±20 rad/s)이 명령(±1)을 압도
+> **Missing observation scale** — raw `dof_vel` (±20 rad/s) overwhelms the commands (±1)
 
-숫자로 보면 명확하다. 스케일하지 않으면 관측 45차원 중 12개(관절 속도)가
-**명령보다 20배 큰 값**을 갖는다. 신경망 입장에서 명령은 거의 보이지 않는 잡음이 된다.
+In numbers it's clear. Without scaling, 12 of the 45 observation dims (joint velocities) have
+**values 20× larger than the commands**. From the network's point of view, the commands become nearly invisible noise.
 
-결과는 **정책이 명령을 무시하고 가만히 서 있는 것.** Stage 3 toy 환경의
-"정지 시 보상 0.4426 하한선" 과 정확히 같은 실패다.
+The result is **a policy that ignores the commands and stands still.** It's exactly the same failure as the
+"0.4426 reward floor when standing still" in the Stage 3 toy environment.
 
-검사 7번이 이 비율을 직접 잰다.
+Check 7 measures this ratio directly.
 
-## 검증
+## Checks
 
 ```bash
 python check.py
 ```
 
-| # | 통과 기준 |
+| # | Pass criterion |
 |:---:|---|
-| 1 | 관측이 45차원 |
+| 1 | The observation is 45-dimensional |
 | 2 | `ang_vel` × 0.25 |
 | 3 | `joint_vel` × 0.05 |
 | 4 | `joint_pos` × 1.0 |
-| 5 | **gravity 는 스케일하지 않는다** |
-| 6 | **`_true_lin_vel_b` 는 스케일 *전* 원값을 보관** |
-| 7 | **스케일 후 `joint_vel`/명령 비율 < 3** (스케일 없으면 20배) |
+| 5 | **gravity is not scaled** |
+| 6 | **`_true_lin_vel_b` keeps the raw value from *before* scaling** |
+| 7 | **After scaling, the `joint_vel`/command ratio is < 3** (20× without scaling) |
 
-6번이 미묘하다. `_true_lin_vel_b` 는 **CENet 의 학습 타깃**이다 (Stage 4).
-스케일 후 값을 저장하면 CENet 이 엉뚱한 스케일의 속도를 배우게 된다.
-원본도 스케일 직전에 `.clone()` 으로 원값을 떠 둔다.
+Number 6 is subtle. `_true_lin_vel_b` is **CENet's training target** (Stage 4).
+If you store the scaled value, CENet learns velocity at the wrong scale.
+The original also grabs the raw value with `.clone()` right before scaling.
 
-## 검사기가 Isaac Sim 없이 도는 방법
+## How the checker runs without Isaac Sim
 
-`_get_observations` 는 메서드지만, 필요한 속성만 갖춘 가짜 `self` 를 만들어
-**언바운드로 직접 호출**한다.
+`_get_observations` is a method, but the checker builds a fake `self` with only the needed attributes and
+**calls it directly, unbound**.
 
 ```python
 get_obs = load_module(path).DreamWaQEnv._get_observations
-get_obs(fake_self)      # env 를 띄우지 않는다
+get_obs(fake_self)      # doesn't launch an env
 ```
 
-`exercises/tools/fake_isaaclab.py` 가 `isaaclab.*` import 를 meta path finder 로
-가로채므로 25초짜리 Isaac Sim 기동이 필요 없다. 2초면 끝난다.
+`exercises/tools/fake_isaaclab.py` intercepts `isaaclab.*` imports with a meta path finder,
+so the 25-second Isaac Sim startup isn't needed. It's done in 2 seconds.

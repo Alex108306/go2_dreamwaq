@@ -1,93 +1,93 @@
-# task04_diagnose — 잠재가 죽었을 때, **무엇이 먼저 죽었는지** 가른다  `L2 · BUILD`
+# task04_diagnose — When the latent dies, tell **what died first**  `L2 · BUILD`
 
-**Stage 5 · 결과 비교**
+**Stage 5 · Comparing results**
 
-## 목표
+## Goal
 
-task03 에서 "순서가 안 나오면 그것도 결과다" 라고 했다. **그럼 어떻게 원인을 찾는가.**
+task03 said "if the ordering doesn't come out, that's a result too". **So how do you find the cause?**
 
-이 프로젝트의 CENet 잠재변수 `z`(16차원)는 **두 번 죽었고, 두 번의 기전이 서로 달랐다.**
-그리고 둘은 겉으로 완전히 똑같이 생겼다 — `|mu| → 0`, `sigma → 1`, `KL → 0`.
+This project's CENet latent variable `z` (16-dim) **died twice, and the two mechanisms were different.**
+And the two look completely identical from the outside — `|mu| → 0`, `sigma → 1`, `KL → 0`.
 
-처방은 정반대다. 한쪽은 β 를 낮추면 살고, 다른 쪽은 β 를 아무리 낮춰도 안 산다.
-**그러니 겉모습만 보고 처방을 고르면 반은 틀린다.** 이 실습은 겉모습이 같은 두 상태를
-가르는 두 번째 지표를 재는 것이다.
+The prescriptions are opposite. One lives if β is lowered; the other doesn't live however much β is lowered.
+**So if you pick a prescription by appearance alone, you're wrong half the time.** This exercise measures a second metric
+that separates two states with the same appearance.
 
-## 기전 두 가지
+## The two mechanisms
 
-CENet 의 디코더는 `[v̂(3), z(16)]` 를 받아 다음 스텝 관측 45차원을 복원한다 (논문 Fig.2).
-여기서 `z` 를 살려 두는 힘은 **재구성 손실 하나뿐**이다 — 정책 그래디언트는 인코더에 닿지
-않고(Fig.1), `v̂` 만 `vel_loss` 로 따로 지도학습된다. 그래서 두 가지로 죽는다.
+CENet's decoder takes `[v̂(3), z(16)]` and reconstructs the next step's 45-dim observation (paper Fig.2).
+Here, **the only force keeping `z` alive is the reconstruction loss** — the policy gradient doesn't reach the encoder
+(Fig.1), and only `v̂` is separately supervised by `vel_loss`. So it dies in two ways.
 
 ```
-(a) KL 과압                     (b) 디코더가 z 를 버린다
+(a) KL overpressure                   (b) The decoder drops z
     ────────────                    ─────────────────────
-    디코더:  z 를 읽고 싶어 한다      디코더:  z 를 안 읽는다. v̂ 만 읽는다
-             (|W_z| 가 크다)                  (|W_z| → 0, |W_vel| 만 커진다)
-    인코더:  KL 압력에 눌려 얼었다     인코더:  z 로 오는 recon 그래디언트가 없어서
-                                             약한 KL 압력에도 그냥 죽는다
-    처방:    β 를 낮춘다             처방:    β 를 낮춰도 소용없다.
-                                             z 에게 **할 일**을 만들어 줘야 한다
+    Decoder: wants to read z              Decoder: doesn't read z. Reads only v̂
+             (|W_z| is large)                      (|W_z| → 0, only |W_vel| grows)
+    Encoder: frozen under KL pressure     Encoder: with no recon gradient coming to z,
+                                                   it just dies even under weak KL pressure
+    Fix:     lower β                      Fix:     lowering β doesn't help.
+                                                   z has to be given **work to do**
 ```
 
-(b) 가 왜 생기나. `v̂` 는 정답(실제 base 속도)을 직접 받아 학습하므로 재구성 경쟁에서
-`z` 를 이긴다. 디코더 입장에서는 확실한 `v̂` 만 읽는 것이 언제나 이득이고, 한 번 `z` 를
-놓으면 `z` 로 가는 그래디언트가 끊겨 되돌아오지 않는다. **논문 구조가 만들어 두는 조건**이지
-우리 구현의 실수가 아니다 — 디코더가 `[v̂, z]` 를 함께 받는 것은 논문 Fig.2 에 그려져 있다
+Why does (b) happen? `v̂` learns directly from the ground truth (actual base velocity), so it beats `z` in the
+reconstruction competition. From the decoder's point of view, reading only the reliable `v̂` always pays, and once it lets go
+of `z`, the gradient to `z` is cut and never comes back. It's **a condition the paper's structure sets up**, not
+a mistake in our implementation — the decoder receiving `[v̂, z]` together is drawn in paper Fig.2
 (`PAPER.md` §4).
 
-**다만 "조건" 이지 "결말" 이 아니다.** 같은 구조로 `z` 가 멀쩡히 산 런도 있다 (아래 실측표의
-`alive` 줄). 조건이 실제로 붕괴까지 가느냐는 **β 와 env** 가 가른다 — 아래
-"왜 랜덤화가 z 를 죽였나" 절에서 양쪽 방향으로 확인한다. "논문대로 하면 반드시 붕괴한다"
-가 아니다.
+**But it's a "condition", not an "outcome".** There are runs with the same structure where `z` lived just fine (the
+`alive` row of the measurement table below). Whether the condition actually goes all the way to collapse is decided by **β and the env** — the
+"Why randomization killed z" section below confirms this in both directions. It's not "following the paper always
+collapses".
 
-## 그래서 무엇을 재는가 — 인코더 하나 더, 디코더 하나
+## So what to measure — one more for the encoder, one for the decoder
 
-### 인코더: 입력을 바꾸면 출력이 움직이는가
+### Encoder: does the output move when the input changes
 
-VAE 의 posterior collapse 는 이렇게 생겼다.
-
-```
-q(z | o^H)  →  N(0, I)          입력 o^H 가 무엇이든 같은 분포를 뱉는다
-```
-
-즉 **mu 가 0 으로, sigma 가 1 로 눌린다.** 그러면 actor 가 받는 context 16차원은
-**매 스텝 새로 뽑히는 순수 가우시안 노이즈**다. 정보량이 0 비트다.
-`Waq` 가 `Base` 를 못 이기는 것이 당연해진다 — 관측 19차원을 노이즈로 늘린 셈이니까.
-
-확인하는 데 시뮬레이터는 필요 없다. 인코더는 그냥 MLP 이므로 **아무 입력이나 넣어 보고
-출력이 움직이는지** 보면 된다. 움직이지 않으면 죽은 것이다.
-
-> 진짜 관측 대신 N(0,1) 을 넣는 이유: 재는 것이 **정확도가 아니라 입력 민감도**이기 때문이다.
-> 관측은 정규화되어 들어가므로 N(0,1) 은 그럴듯한 입력 분포이고, 무엇보다
-> **시뮬레이터 없이 어떤 체크포인트에도 같은 잣대**를 댈 수 있다.
-
-### 디코더: 애초에 z 를 읽기는 하는가
-
-이쪽은 프로브도 필요 없다. **가중치만 보면 된다.**
-
-디코더 1층 가중치 `W` 는 `[hidden, 19]` 다. 입력 `j` 가 뒷단에 미치는 영향은 전부
-`W` 의 **`j` 번째 열**을 통과한다. 그러니
+A VAE's posterior collapse looks like this.
 
 ```
-||W[:, j]||  =  디코더가 입력 j 에서 읽어 가는 양
+q(z | o^H)  →  N(0, I)          emits the same distribution whatever the input o^H
 ```
 
-이고, 입력은 `[v̂(3), z(16)]` 이므로 앞 3열의 평균이 `|W_vel|`, 뒤 16열의 평균이 `|W_z|` 다.
-열이 0 이면 그 입력은 디코더에 **아무 영향도 못 준다.**
+That is, **mu is pressed to 0 and sigma to 1.** Then the 16 context dims the actor receives are
+**pure Gaussian noise drawn fresh every step**. The information content is 0 bits.
+It becomes natural that `Waq` can't beat `Base` — it's like padding the observation with 19 dims of noise.
 
-이 한 쌍이 (a)와 (b)를 가른다.
+No simulator is needed to check. The encoder is just an MLP, so **feed it any input and
+see whether the output moves**. If it doesn't move, it's dead.
 
-| | `\|mu\|` | `\|W_z\|` | 읽는 법 |
+> The reason to feed N(0,1) instead of real observations: what's measured is **input sensitivity, not accuracy**.
+> Observations go in normalized, so N(0,1) is a plausible input distribution, and above all
+> **the same yardstick can be applied to any checkpoint without a simulator**.
+
+### Decoder: does it even read z in the first place
+
+This one doesn't even need a probe. **Just look at the weights.**
+
+The decoder's first-layer weight `W` is `[hidden, 19]`. All of input `j`'s influence on what follows
+passes through **column `j`** of `W`. So
+
+```
+||W[:, j]||  =  how much the decoder reads from input j
+```
+
+and since the input is `[v̂(3), z(16)]`, the mean of the first 3 columns is `|W_vel|` and the mean of the last 16 columns is `|W_z|`.
+If a column is 0, that input has **no influence at all** on the decoder.
+
+This pair separates (a) from (b).
+
+| | `\|mu\|` | `\|W_z\|` | How to read it |
 |---|---|---|---|
-| 정상 | 크다 | 크다 | 인코더가 말하고 디코더가 듣는다 |
-| (a) KL 과압 | **0** | 크다 | 듣고 싶은데 말하는 쪽이 얼었다 |
-| (b) 디코더가 버림 | **0** | **0** | 아무도 안 듣는다. 그래서 말할 이유도 없다 |
+| Healthy | large | large | The encoder speaks and the decoder listens |
+| (a) KL overpressure | **0** | large | It wants to listen, but the speaker has frozen |
+| (b) Decoder dropped z | **0** | **0** | Nobody listens. So there's no reason to speak either |
 
-## 채울 곳
+## What to fill in
 
 ```
-starter.py  →  diagnose_checkpoint()  안의  TODO(stage5-collapse-probe)
+starter.py  →  TODO(stage5-collapse-probe)  inside  diagnose_checkpoint()
 ```
 
 ```python
@@ -96,71 +96,71 @@ def diagnose_checkpoint(cenet_state_dict: dict,
                         seed: int = 0) -> dict:
 ```
 
-| 인자 | |
+| Argument | |
 |---|---|
-| `cenet_state_dict` | 체크포인트의 `cenet_state_dict`. `encoder.*` 와 `decoder.*` 키가 섞여 있다 |
-| `num_samples` | 인코더 프로브 개수 |
-| `seed` | 프로브 난수 시드. 같은 시드는 **같은 수치**를 내야 한다 |
+| `cenet_state_dict` | The checkpoint's `cenet_state_dict`. `encoder.*` and `decoder.*` keys are mixed in |
+| `num_samples` | Number of encoder probes |
+| `seed` | Probe RNG seed. The same seed must give **the same numbers** |
 
-반환 — 수치 여섯은 파이썬 `float`, `mechanism` 만 문자열이다.
+Returns — the six numbers are Python `float`s; only `mechanism` is a string.
 
-| 키 | 뜻 | 붕괴하면 |
+| Key | Meaning | On collapse |
 |---|---|---|
-| `mu_abs` | mu 절대값의 평균 | **0 으로 눌린다** (핵심 지표) |
-| `sigma` | `exp(0.5*logvar)` 의 평균 | 1 로 눌린다 |
-| `kl` | `KL(q‖N(0,I))`, 16차원 **합**, 샘플 평균 (nats) | 0 |
-| `est_vel_std` | 추정 속도 3차원의 **샘플 축** 표준편차 평균 | 입력이 변해도 안 움직인다 |
-| `dec_w_vel` | 디코더 1층 가중치 **앞 3열**의 열노름 평균 | (오히려 커진다) |
-| `dec_w_z` | 디코더 1층 가중치 **뒤 16열**의 열노름 평균 | 기전 (b)에서만 0 이 된다 |
+| `mu_abs` | Mean of \|mu\| | **pressed to 0** (key metric) |
+| `sigma` | Mean of `exp(0.5*logvar)` | pressed to 1 |
+| `kl` | `KL(q‖N(0,I))`, 16-dim **sum**, sample mean (nats) | 0 |
+| `est_vel_std` | Mean **sample-axis** std of the 3 estimated-velocity dims | doesn't move when the input changes |
+| `dec_w_vel` | Mean column norm of the **first 3 columns** of the decoder's first-layer weight | (grows, if anything) |
+| `dec_w_z` | Mean column norm of the **last 16 columns** of the decoder's first-layer weight | becomes 0 only in mechanism (b) |
 | `mechanism` | `alive` / `kl_overpressure` / `decoder_dropped_z` / `nan` | |
 
-`build_encoder()` (state_dict → `nn.Sequential`), `decoder_input_weight()` (디코더 첫 Linear
-가중치), `probe_run()`, `verdict()`, `find_runs()` 는 이미 있다.
-채울 것은 `diagnose_checkpoint()` 하나다.
+`build_encoder()` (state_dict → `nn.Sequential`), `decoder_input_weight()` (the decoder's first Linear
+weight), `probe_run()`, `verdict()`, `find_runs()` already exist.
+The only thing to fill in is `diagnose_checkpoint()`.
 
-### 판정 순서가 곧 논리다
+### The verdict order is the logic
 
 ```
-1. NaN 이면            → "nan"                  (아래 'NaN' 절)
-2. |mu| 가 크면        → "alive"
-3. |W_z|/|W_vel| 이 크면 → "kl_overpressure"     듣고 싶은데 말을 못 한다
-4. 그 외              → "decoder_dropped_z"     아무도 안 듣는다
+1. if NaN                → "nan"                  (the 'NaN' section below)
+2. if |mu| is large      → "alive"
+3. if |W_z|/|W_vel| is large → "kl_overpressure"  wants to listen but can't speak
+4. otherwise             → "decoder_dropped_z"    nobody listens
 ```
 
-2번이 3·4번보다 **먼저**인 것에 이유가 있다. actor 가 받는 것은 디코더의 출력이 아니라
-인코더가 만든 `context` 다. `|W_z|` 가 죽었어도 `|mu|` 가 살아 있으면 actor 는 여전히
-정보를 받고 있다 — `|W_z|` 의 죽음은 **"곧 죽는다"는 조짐**이지 이미 죽었다는 뜻이 아니다.
-(그래서 학습 중에 `Loss/cenet_dec_w_z` 를 보는 것이 `|mu|` 를 보는 것보다 **빠른 경보**다.)
+There's a reason 2 comes **before** 3 and 4. What the actor receives is not the decoder's output but
+the `context` made by the encoder. Even if `|W_z|` has died, as long as `|mu|` is alive the actor is still
+receiving information — the death of `|W_z|` is **a sign that "it will die soon"**, not that it's already dead.
+(That's why watching `Loss/cenet_dec_w_z` during training is an **earlier alarm** than watching `|mu|`.)
 
-## 임계값으로 "건강"을 단정하지 않는다
+## Don't conclude "health" from a threshold
 
-이 실습에는 판정선이 두 개 있다 (`MU_ALIVE = 1e-2`, `Z_USED = 1e-2`). 둘 다 **읽기 보조**이지
-진리가 아니다. 검사기가 **진짜 체크포인트를 채점하지 않는 이유**가 여기 있다.
+This exercise has two decision lines (`MU_ALIVE = 1e-2`, `Z_USED = 1e-2`). Both are **reading aids**,
+not truth. This is **why the checker doesn't grade real checkpoints**.
 
-이 실습의 이전 판은 "이 폴더는 정상, 저 폴더는 붕괴" 를 파일 경로로 못 박고 임계값이 그 둘을
-갈라야 통과하게 되어 있었다. 그런데 **정상이라고 이름 붙였던 런이 나중에 붕괴했다.** 그러자
-어떤 임계값도 두 조건을 동시에 만족시킬 수 없게 되었다 — 한쪽은 `≤ 6.3e-4` 를, 다른 쪽은
-`> 4.2e-3` 을 요구했기 때문이다. 실습이 통과 불가능해졌다.
+A previous version of this exercise hard-coded "this folder is healthy, that folder collapsed" by file path, and to pass,
+the thresholds had to separate the two. But **a run that had been labeled healthy later collapsed.** Then
+no threshold could satisfy both conditions at once — one side required `≤ 6.3e-4` and the other
+`> 4.2e-3`. The exercise became impossible to pass.
 
-교훈은 임계값을 고치는 것이 아니다.
+The lesson is not to fix the thresholds.
 
-> **"이 런은 정상이다" 는 파일 경로에서 읽을 수 있는 사실이 아니다.** 그것은 이 스크립트가
-> 판정할 대상이지 스크립트에 미리 넣어 둘 정답이 아니다.
+> **"This run is healthy" is not a fact you can read from a file path.** It's something this script
+> is meant to judge, not a correct answer to bake into the script in advance.
 
-그래서 지금 검사기는 **손으로 만든 합성 체크포인트만 채점한다.** 합성 가중치는 정답을
-해석적으로 알고, 값을 판정선에서 **한 자릿수 넘게** 떨어뜨려 둘 수 있어 **임계값을 상식적인
-범위 안에서 어떻게 잡든 결과가 같다** (구체적인 범위는 아래 "검증" 절의 표에 실측해 두었다).
-진짜 체크포인트는 마지막에 **찍어만 주고 채점하지 않는다.**
+So the checker now **grades only hand-made synthetic checkpoints.** For synthetic weights the correct answers are
+known analytically, and the values can be kept **more than an order of magnitude** away from the decision lines, so **the result is the same however
+the thresholds are set within a sensible range** (the concrete ranges are measured in the table in the "Checks" section below).
+Real checkpoints are **only printed at the end, not graded.**
 
-## 판정은 **마지막** 체크포인트로 한다
+## Judge by the **last** checkpoint
 
-이것이 task02 의 '평균 창' 교훈과 짝을 이루는 부분이다. 붕괴는 초기화 직후가 아니라
-**학습 도중에** 일어난다. 보관된 붕괴 런들은 `it 0` 에서 `|mu|` 가 3e-2 ~ 1e-1 로 전부
-멀쩡했다. **첫 체크포인트만 봤다면 셋 다 정상이라고 썼을 것이다.**
+This is the counterpart to task02's 'averaging window' lesson. Collapse happens not right after initialization but
+**during training**. The archived collapsed runs all had a healthy `|mu|` of 3e-2 ~ 1e-1 at `it 0`.
+**Had you looked only at the first checkpoint, you'd have written that all three were healthy.**
 
-`|W_z|` 의 궤적을 나란히 놓으면 갈리는 지점이 보인다 (rough Waq, 같은 프로브).
+Putting the `|W_z|` trajectories side by side shows where they diverge (rough Waq, same probe).
 
-| it | 랜덤화 없음 (`\|W_z\|`) | 랜덤화 있음, β=1.0 (`\|W_z\|`) |
+| it | no randomization (`\|W_z\|`) | with randomization, β=1.0 (`\|W_z\|`) |
 |---:|---|---|
 | 0 | 1.037 | 1.041 |
 | 500 | 0.164 ↓ | **0.0114** ↓↓ |
@@ -168,272 +168,272 @@ def diagnose_checkpoint(cenet_state_dict: dict,
 | 2000 | 0.233 ↑ | 0.0045 |
 | 3999 | **0.259** ↑ | **0.0044** |
 
-**두 런 다 it 500 에 한 번 꺼진다.** 갈리는 것은 그 뒤 **다시 켜지느냐**다.
-한쪽은 회복해 단조 증가하고, 다른 쪽은 그대로 죽는다.
+**Both runs switch off once at it 500.** What separates them is whether it **switches back on** afterwards.
+One recovers and increases monotonically; the other stays dead.
 
-## 실측 — 보관된 네 런
+## Measured — the four archived runs
 
-전부 `num_samples=2048, seed=0`, 각 런의 **마지막** 체크포인트다. 이 숫자들은 지금 이
-`check.py` 를 돌리면 그대로 다시 나온다 (자산이 있다면).
+All with `num_samples=2048, seed=0`, on each run's **last** checkpoint. These numbers come out again exactly
+when you run this `check.py` now (if you have the assets).
 
-> **이 표는 강사 자산 기준이다.** 세 줄이 각각 `_archive_3000it_stairheavy` /
-> `_archive_4000it_clip1_norew` / `_archive_4000it_collapsedwaq` 에서 나오는데, 셋 다
-> `logs/` 아래라 **배포 압축에 없을 수 있다** (Stage 5 README 의 배포 자산 목록을 본다).
-> 없으면 그 줄이 안 찍힐 뿐이고, **이 실습은 자산 없이 합성 체크포인트만으로 통과한다.**
+> **This table is based on the instructor's assets.** The three rows come from `_archive_3000it_stairheavy` /
+> `_archive_4000it_clip1_norew` / `_archive_4000it_collapsedwaq` respectively, and all three are
+> under `logs/`, so **they may not be in the distributed archive** (see the list of distributed assets in the Stage 5 README).
+> If they're missing, those rows just won't be printed, and **this exercise passes with synthetic checkpoints alone, without the assets.**
 
-| 런 (rough Waq) | 손실 설정 | 랜덤화 | `\|mu\|` | `\|W_vel\|` | `\|W_z\|` | `W_z/W_vel` | 기전 |
+| Run (rough Waq) | Loss setting | Randomization | `\|mu\|` | `\|W_vel\|` | `\|W_z\|` | `W_z/W_vel` | Mechanism |
 |---|---|:---:|---|---|---|---|---|
-| `_archive_3000it_stairheavy` | KL 16차원 **합** + β→4 (실효 β 180) | ✗ | 4.17e-3 | 4.39 | **1.91** | 4.4e-1 | **kl_overpressure** |
-| `_archive_4000it_clip1_norew` | KL 평균, β=1.0 | ✗ | 2.87e-2 | 9.90 | 0.259 | 2.6e-2 | **alive** |
-| `_archive_4000it_collapsedwaq` | KL 평균, β=1.0 | **✓** | 6.28e-4 | 10.24 | **0.0044** | 4.3e-4 | **decoder_dropped_z** |
+| `_archive_3000it_stairheavy` | KL 16-dim **sum** + β→4 (effective β 180) | ✗ | 4.17e-3 | 4.39 | **1.91** | 4.4e-1 | **kl_overpressure** |
+| `_archive_4000it_clip1_norew` | KL mean, β=1.0 | ✗ | 2.87e-2 | 9.90 | 0.259 | 2.6e-2 | **alive** |
+| `_archive_4000it_collapsedwaq` | KL mean, β=1.0 | **✓** | 6.28e-4 | 10.24 | **0.0044** | 4.3e-4 | **decoder_dropped_z** |
 
-**세 줄이 세 가지 결말이다.** 그리고 `|mu|` 만 보면 1번과 3번이 같은 종류로 보인다
-(둘 다 1e-2 아래). 갈라 주는 것은 `|W_z|` 열 하나다 — 1.91 대 0.0044, **430배**.
+**Three rows, three outcomes.** And looking only at `|mu|`, rows 1 and 3 look like the same kind
+(both below 1e-2). What separates them is the single `|W_z|` column — 1.91 vs 0.0044, **430x**.
 
-## 왜 랜덤화가 z 를 죽였나 — 이 코스의 마지막 교훈
+## Why randomization killed z — this course's last lesson
 
-3번 줄에서 바뀐 것은 **도메인 랜덤화를 켠 것**뿐이다 (`PAPER.md` §6, §4).
-절제 실험으로 확인했다: clip 도 보상 항도 무죄였고, **랜덤화만 빼면 z 가 산다.**
+The only thing changed in row 3 is **turning on domain randomization** (`PAPER.md` §6, §4).
+Confirmed by ablation: neither the clip nor the reward terms were to blame; **remove only the randomization and z lives.**
 
-기전은 이렇다. 랜덤화가 흔드는 것은 마찰·payload·CoM·관절 게인·모터 출력 — 전부
-episode 시작에 한 번 정해지는 **env 상수**다.
+The mechanism is this. What randomization shakes is friction, payload, CoM, joint gains and motor strength — all
+**env constants** set once at the start of an episode.
 
-- `z` 가 볼 수 있는 것은 **0.1초(5프레임) 관측 이력**뿐이다. 그 짧은 창으로 마찰 계수를
-  역추정하는 것은 사실상 불가능하다 → **z 가 재구성에 기여할 수 있는 양이 줄었다.**
-- 동시에 `o_{t+1}` 의 **예측 불가능한 성분은 커졌다** → 재구성 손실 자체가 시끄러워졌다.
+- What `z` can see is only **a 0.1-second (5-frame) observation history**. Back-estimating a friction coefficient from that short window
+  is practically impossible → **the amount z can contribute to reconstruction shrank.**
+- At the same time, **the unpredictable component of `o_{t+1}` grew** → the reconstruction loss itself got noisier.
 
-`z` 로 가는 recon 그래디언트가 약해지자 β=1.0 의 KL 압력조차 못 이겼고, 디코더는
-확실한 `v̂` 쪽으로 갈아탔다. 기전 (b) 다.
+As the recon gradient to `z` weakened, it couldn't even beat the KL pressure of β=1.0, and the decoder
+switched over to the reliable `v̂`. That's mechanism (b).
 
-> **z 는 일이 있어야 산다. 얼마나 눌러도 되는지는 일의 양에 달렸다.**
+> **z lives only if it has work to do. How hard you can press on it depends on the amount of work.**
 
-이 문장이 두 방향으로 확인된다.
+This sentence is confirmed in both directions.
 
-- IsaacGym 원본 설정(KL 합 + β→4, 실효 β 180)을 **지금 env 에 그대로 옮기면 죽는다**
-  (처방 셀 `DWQ_CENET_REFERENCE=1`: `|mu|` 0.008, 활성 차원 0). 원본이 살았던 것은 손실
-  설정이 좋아서가 아니라 **env 가 z 에게 일을 많이 줬기 때문**이다 — 1초마다 ±1 m/s 로
-  미는 외란이 있었고, 논문이 `z` 가 인코딩한다고 지목한 신호가 바로 외란과 지형이다.
-- 반대로 랜덤화를 **켠 채로** β 를 1.0 → **0.35** 로 낮추자 z 가 살았다
-  (`|mu|` 0.215, KL 4.2 nats, 활성 차원 5/16). 4000-iteration 지평으로 다시 걸어 확인했고,
-  그래서 **β 0.35 를 cfg 기본값으로 채택**했다.
+- Moving the IsaacGym original settings (KL sum + β→4, effective β 180) **as-is into the current env kills it**
+  (prescription cell `DWQ_CENET_REFERENCE=1`: `|mu|` 0.008, 0 active dims). The original lived not because its loss
+  settings were good but **because the env gave z a lot of work to do** — there was a disturbance pushing ±1 m/s
+  every second, and the signals the paper points to as what `z` encodes are exactly disturbances and terrain.
+- Conversely, with randomization **still on**, lowering β from 1.0 → **0.35** made z live
+  (`|mu|` 0.215, KL 4.2 nats, 5/16 active dims). It was walked again over a 4000-iteration horizon to confirm,
+  and so **β 0.35 was adopted as the cfg default**.
 
-논문은 β 값을 주지 않는다. 그러니 이것은 논문 이탈이 아니라 **논문이 비워 둔 자리를
-측정으로 채운 것**이다. 그리고 얻은 결론은 하나다 — **코드와 env 는 세트다.**
-"이 손실 함수가 맞다" 는 문장은 어떤 env 에서 맞다는 뜻인지 말하지 않으면 반쪽이다.
+The paper doesn't give a β value. So this is not a departure from the paper but **filling a spot the paper left blank
+with measurements**. And the conclusion reached is one — **the code and the env are a set.**
+The sentence "this loss function is right" is only half a sentence unless it says in which env it's right.
 
-## NaN — 네 번째 결말
+## NaN — the fourth outcome
 
-`mechanism` 에 `nan` 이 있는 이유는 실제로 있었기 때문이다.
+`nan` is in `mechanism` because it actually happened.
 
-`_archive_3000it_stairheavy` 의 **flat** Waq 런은 `it 500` 부터 CENet 텐서 14개가
-**전부 NaN** 이다. 그런데 그 런의 `Train/mean_reward` 는 35 까지 올랐고 추종 보상도 정상이다.
-어떻게 그럴 수 있나 — 러너가 actor 관측을 만들 때 씻어 버리기 때문이다.
+The **flat** Waq run of `_archive_3000it_stairheavy` has **all 14 CENet tensors NaN** from `it 500`.
+Yet that run's `Train/mean_reward` rose to 35 and the tracking reward is normal too.
+How is that possible — because the runner washes it away when building the actor observation.
 
 ```python
 # dreamwaq_runner.py:203
 return torch.nan_to_num(torch.cat(parts, dim=-1), nan=0.0, posinf=10.0, neginf=-10.0)
 ```
 
-즉 그 런은 3000 iteration 내내 **"Base + 0 이 19개"** 로 학습했고, 곡선만 보면 아무 문제가
-없었다. `nan_to_num` 은 학습을 죽지 않게 하려고 넣은 안전장치인데, 그 대가로 **고장을
-안 보이게** 만들었다.
+That is, the run trained for all 3000 iterations as **"Base + 19 zeros"**, and looking only at the curves there was
+no problem. `nan_to_num` is a safeguard added to keep training from dying, but in exchange it **made the failure
+invisible**.
 
-NaN 을 먼저 걸러내야 하는 실무적 이유도 있다: **NaN 은 모든 부등호에서 `False`** 라
-그냥 두면 마지막 `else` 로 굴러떨어져 `decoder_dropped_z` 라는 **있지도 않은 기전**으로
-이름이 붙는다. 잘못된 이름표는 값이 없는 것보다 나쁘다.
+There's also a practical reason to filter NaN first: **NaN is `False` in every comparison**, so
+left alone it tumbles down into the final `else` and gets labeled `decoder_dropped_z`, **a mechanism that doesn't
+even exist**. A wrong label is worse than no value.
 
-## 검증
+## Checks
 
 ```bash
 cd exercises/stage5_compare/task04_diagnose
-~/IsaacLab/_isaac_sim/python.sh check.py              # 합성 체크포인트만 채점 — 1초, 자산 불필요
-~/IsaacLab/_isaac_sim/python.sh starter.py            # 자산이 있으면 찾은 런을 전부 훑는다
-~/IsaacLab/_isaac_sim/python.sh starter.py --run <폴더> --run <폴더>
+~/IsaacLab/_isaac_sim/python.sh check.py              # grades synthetic checkpoints only — 1 s, no assets needed
+~/IsaacLab/_isaac_sim/python.sh starter.py            # if the assets are there, scans every run it finds
+~/IsaacLab/_isaac_sim/python.sh starter.py --run <folder> --run <folder>
 ```
 
-통과 기준 (합성 체크포인트만, 임계값에 의존하지 않는 것들):
+Pass criteria (synthetic checkpoints only, things that don't depend on the thresholds):
 
-1. 수치 여섯을 파이썬 `float` 로, `mechanism` 을 `MECHANISMS` 안의 문자열로 돌려준다
-2. 인코더 프로브 입력이 **표준정규**다 (균등분포·상수를 넣으면 값이 안 맞는다)
-3. `KL = -0.5·Σ(1 + logvar − mu² − exp(logvar))` — 16차원 **합**이다 (평균이면 1/16 이 나온다).
-   `sigma` 는 `exp(0.5·logvar)` 의 평균 — `logvar` 를 그대로 쓰면 안 된다
-4. `est_vel_std` 는 **샘플 축(dim=0)** 의 표준편차 평균 — 차원 축으로 내면 다른 값이다
-5. `dec_w_vel` / `dec_w_z` 는 **열 노름**의 평균이고, 경계는 **3 / 16** 이다
-   (한 칸 밀려 4/15 로 가르면 검사기가 잡는다)
-6. 네 기전을 구별한다. 그리고 **판정 순서**가 맞다 — NaN 이 먼저고, `|mu|` 가 `|W_z|` 보다 먼저다
-7. 같은 `seed` 는 같은 수치, 다른 `seed` 는 다른 표본. **전역 난수 상태를 오염시키지 않는다**
-   (`torch.manual_seed` 가 아니라 `torch.Generator`)
-8. `num_samples` 가 실제 표본 수다 (늘리면 seed 간 산포가 줄어야 한다)
+1. Returns the six numbers as Python `float`s and `mechanism` as a string in `MECHANISMS`
+2. The encoder probe input is **standard normal** (feeding uniform or constant values doesn't match)
+3. `KL = -0.5·Σ(1 + logvar − mu² − exp(logvar))` — a 16-dim **sum** (a mean gives 1/16).
+   `sigma` is the mean of `exp(0.5·logvar)` — `logvar` must not be used as-is
+4. `est_vel_std` is the mean std over the **sample axis (dim=0)** — over the dimension axis it's a different value
+5. `dec_w_vel` / `dec_w_z` are means of **column norms**, and the boundary is **3 / 16**
+   (the checker catches a split shifted by one to 4/15)
+6. Distinguishes the four mechanisms. And **the verdict order** is right — NaN first, `|mu|` before `|W_z|`
+7. The same `seed` gives the same numbers, a different `seed` different samples. **Doesn't pollute the global RNG state**
+   (`torch.Generator`, not `torch.manual_seed`)
+8. `num_samples` is the real sample count (increasing it should reduce the spread across seeds)
 
-합성 값은 판정선에서 **한 자릿수 이상** 떨어져 있어, `MU_ALIVE` / `Z_USED` 를
-**넓은 범위 안에서 어떻게 잡아도 채점 결과가 같다.** 실제로 흔들어 재 보면 이렇다.
+The synthetic values are **at least an order of magnitude** away from the decision lines, so **however `MU_ALIVE` / `Z_USED`
+are set within a wide range, the grading result is the same.** Actually shaking them and measuring gives this.
 
-| 상수 | 기본값 | 6번 테스트가 전부 통과하는 범위 | 가장 좁은 여유 |
+| Constant | Default | Range where all of test 6 passes | Narrowest margin |
 |---|---|---|---|
-| `MU_ALIVE` | `1e-2` | `0 < MU_ALIVE < 0.81` | 붕괴 합성의 `\|mu\|` 는 **정확히 0** 이라 아래쪽 여유는 무한대 |
-| `Z_USED` | `1e-2` | `4.30e-4 < Z_USED ≤ 0.435` | `decoder_dropped_z` 합성의 `\|W_z\|/\|W_vel\| = 4.30e-4` — 기본값에서 **23배(1.4 자릿수)** |
+| `MU_ALIVE` | `1e-2` | `0 < MU_ALIVE < 0.81` | The collapsed synthetic's `\|mu\|` is **exactly 0**, so the lower margin is infinite |
+| `Z_USED` | `1e-2` | `4.30e-4 < Z_USED ≤ 0.435` | The `decoder_dropped_z` synthetic's `\|W_z\|/\|W_vel\| = 4.30e-4` — **23x (1.4 orders of magnitude)** from the default |
 
-즉 `Z_USED` 를 **`1e-3` ~ `1e-1` 범위 안에서 어떻게 잡아도** 채점 결과가 같다. 그 밖으로
-나가면 깨진다 — `Z_USED=1e-5` 로 두면 `decoder_dropped_z` 합성이 `kl_overpressure` 로
-분류되어 6번이 FAIL 한다. **"임계값에 의존하지 않는다"가 아니라 "여유가 한 자릿수 넘게 있다"**
-가 정확한 말이고, 그것이 이 검사기가 채점할 수 있는 것과 없는 것의 경계다.
+That is, **however `Z_USED` is set within `1e-3` ~ `1e-1`**, the grading result is the same. Outside that
+it breaks — with `Z_USED=1e-5`, the `decoder_dropped_z` synthetic gets classified as `kl_overpressure`
+and test 6 FAILs. **Not "independent of the threshold" but "there's more than an order of magnitude of margin"**
+is the accurate statement, and that's the boundary between what this checker can and can't grade.
 
-## 힌트
+## Hints
 
-인라인 힌트는 두 개뿐이다. 막히면 여기를 단계별로 편다 — **먼저 틀려 보고 `check.py` 의
-출력을 읽는 편**이 답을 미리 읽는 것보다 남는다.
+There are only two inline hints. If you get stuck, unfold these step by step — **failing first and reading
+`check.py`'s output** leaves more behind than reading the answer in advance.
 
-> 아래 `<details>` 는 **GitHub 웹뷰에서만 접힌다.** 터미널이나 에디터로 이 파일을 열면
-> 그냥 다 보인다. 안 보고 해 보고 싶으면 여기서 스크롤을 멈춘다.
-> 힌트는 **방향만** 준다 — 코드와 수식은 `starter.py` 의 docstring 과 위 "통과 기준" 에 있다.
+> The `<details>` below **only fold in the GitHub web view.** If you open this file in a terminal or editor,
+> everything is visible. If you want to try without looking, stop scrolling here.
+> The hints give **direction only** — the code and formulas are in `starter.py`'s docstring and the "Pass criteria" above.
 
 <details>
-<summary>1단계 — 인코더 프로브를 어떻게 만드나</summary>
+<summary>Step 1 — how to build the encoder probe</summary>
 
-`build_encoder()` 로 인코더를 세운 뒤, 표준정규 입력을 `num_samples × INPUT_DIM` 만큼 만든다.
+After building the encoder with `build_encoder()`, create `num_samples × INPUT_DIM` standard-normal inputs.
 
 ```python
 g = torch.Generator().manual_seed(seed)
 probe = torch.randn(num_samples, INPUT_DIM, generator=g)
 ```
 
-`torch.no_grad()` 안에서 돌린다 — gradient 가 필요 없다.
+Run it inside `torch.no_grad()` — no gradient is needed.
 </details>
 
 <details>
-<summary>2단계 — 출력 35차원을 어떻게 가르나</summary>
+<summary>Step 2 — how to split the 35-dim output</summary>
 
-`cenet-forward` 에서 쓴 것과 같은 분할이다. 인코더 출력은 `est_vel`, `mu`, `logvar` 가
-이 순서로 이어 붙은 한 텐서다 — `split([NUM_VEL, NUM_LATENT, NUM_LATENT], dim=-1)`.
+It's the same split you wrote in `cenet-forward`. The encoder output is a single tensor with `est_vel`, `mu`, `logvar`
+concatenated in that order — `split([NUM_VEL, NUM_LATENT, NUM_LATENT], dim=-1)`.
 </details>
 
 <details>
-<summary>3단계 — 인코더 네 지표에서 막히는 곳은 '축' 하나다</summary>
+<summary>Step 3 — where you get stuck on the four encoder metrics is a single thing: 'the axis'</summary>
 
-수식은 `starter.py` 의 docstring 과 위 "통과 기준" 3·4 에 있다. 틀리는 자리는 늘 축이다.
+The formulas are in `starter.py`'s docstring and in "Pass criteria" 3·4 above. Where people go wrong is always the axis.
 
-- `sigma` 는 로그 분산이 아니라 **표준편차**다. `logvar` 를 그대로 평균내면 다른 것을 잰다.
-- `kl` 은 잠재 차원으로 **줄인 뒤** 샘플로 평균한다. 두 축을 바꿔 쓰면 값이 차원 수만큼 어긋난다.
-- `est_vel_std` 는 "**같은 출력 성분이 입력에 따라 얼마나 흔들리는가**"다. 축을 반대로 잡으면
-  "한 샘플 안에서 3개 성분이 서로 얼마나 다른가"를 재게 되어 뜻이 달라진다 — 무엇을 재려는
-  것이었는지로 되돌아가 축을 고른다.
+- `sigma` is the **standard deviation**, not the log variance. Averaging `logvar` as-is measures something else.
+- `kl` is averaged over samples **after reducing** over latent dims. Swap the two axes and the value is off by the number of dims.
+- `est_vel_std` is "**how much the same output component wobbles depending on the input**". Take the axis the other way and
+  you end up measuring "how different the 3 components are from each other within one sample", which means something else — go back to
+  what you were trying to measure and pick the axis.
 
-넷 다 파이썬 `float` 으로 돌려준다.
+Return all four as Python `float`s.
 </details>
 
 <details>
-<summary>4단계 — 디코더 두 지표</summary>
+<summary>Step 4 — the two decoder metrics</summary>
 
-`decoder_input_weight(state_dict)` 가 `[hidden, 19]` 가중치를 준다. 재려는 것은
-"**입력 j 하나가 뒷단에 실어 보내는 양**"이고, 그것은 위 "디코더" 절에서 봤듯 `j` 번째
-**열**에 다 들어 있다. 그러니 노름을 낸 결과의 shape 가 `[19]` 가 되어야 한다 —
-어느 축으로 줄여야 그렇게 되는지 shape 를 손으로 적어 보고 고른다. `[hidden]` 이 나왔다면
-반대로 잡은 것이다.
+`decoder_input_weight(state_dict)` gives the `[hidden, 19]` weight. What you want to measure is
+"**how much a single input j carries to what follows**", and as seen in the "Decoder" section above it's all in
+**column** `j`. So the shape of the norm result must be `[19]` —
+write the shapes out by hand and pick which axis to reduce to get that. If you got `[hidden]`,
+you took it the other way.
 
-가른 뒤 앞이 `v̂`, 뒤가 `z` 다. **자를 폭을 `3` / `16` 으로 직접 박지 말고** 파일 상단의
-상수를 쓴다.
+After splitting, the front is `v̂` and the back is `z`. **Don't hard-code the cut widths as `3` / `16`**; use the
+constants at the top of the file.
 </details>
 
 <details>
-<summary>5단계 — 기전을 이름 붙이는 순서</summary>
+<summary>Step 5 — the order for naming the mechanism</summary>
 
-네 갈래 사다리이고, **순서가 곧 논리다.** 무엇을 먼저 물어야 하는지는 위
-"판정 순서가 곧 논리다" 절과 "NaN — 네 번째 결말" 절이 이유까지 말해 준다. 그 순서를
-그대로 `if / elif` 로 옮기면 된다.
+It's a four-way ladder, and **the order is the logic.** What to ask first is explained, reasons included, by the
+"The verdict order is the logic" section and the "NaN — the fourth outcome" section above. Just translate that order
+into `if / elif` as-is.
 
-두 가지만 덧붙인다.
+Just two additions.
 
-- NaN 은 **모든 부등호에서 `False`** 다. 그래서 `x > 임계값` 으로는 절대 걸리지 않고,
-  걸러내려면 "유한한가"를 따로 물어야 한다.
-- `|W_z|` 와 `|W_vel|` 의 비를 볼 때 나눗셈으로 쓰면 분모가 0 인 경우를 걱정해야 한다.
-  같은 부등식을 곱셈으로 옮겨 쓰면 그 걱정이 사라진다.
+- NaN is **`False` in every comparison**. So `x > threshold` will never catch it;
+  to filter it you must ask "is it finite" separately.
+- When looking at the ratio of `|W_z|` to `|W_vel|`, writing it as a division means worrying about a zero denominator.
+  Rewriting the same inequality as a multiplication removes that worry.
 </details>
 
-## 자산
+## Assets
 
-체크포인트는 `logs/` 아래에 있고 `logs/` 는 **gitignore 대상**이라 이 repo 에 없다.
-이 실습은 자산 **없이도 통과**한다 (합성 검사만으로 충분하다).
+Checkpoints live under `logs/`, and `logs/` is **gitignored**, so they're not in this repo.
+This exercise **passes even without** the assets (the synthetic checks are enough).
 
-`find_runs()` 가 `SEARCH_ROOTS` 아래에서 이름에 `Waq` 가 든 experiment 폴더를 찾아
-가장 최근 timestamp 를 하나씩 고른다. **없는 폴더는 조용히 건너뛴다.**
+`find_runs()` finds experiment folders whose names contain `Waq` under `SEARCH_ROOTS` and
+picks the most recent timestamp of each. **Missing folders are silently skipped.**
 
 ```
 dreamwaq_manager/logs/
-├── rsl_rl/Waq-Official-{Flat,Rough}-PPO-v0/<ts>/          최신 sweep (β=0.35) — 완료 후 여기 생긴다
-├── _archive_4000it_collapsedwaq/Waq-.../<ts>/             β=1.0 + 랜덤화 → decoder_dropped_z
-├── _archive_4000it_clip1_norew/Waq-.../<ts>/              랜덤화 이전 → alive
-└── _archive_3000it_stairheavy/rsl_rl/Waq-.../<ts>/        KL 합 + β→4 → rough 는 kl_overpressure,
-                                                          flat 은 NaN
+├── rsl_rl/Waq-Official-{Flat,Rough}-PPO-v0/<ts>/          latest sweep (β=0.35) — appears here once complete
+├── _archive_4000it_collapsedwaq/Waq-.../<ts>/             β=1.0 + randomization → decoder_dropped_z
+├── _archive_4000it_clip1_norew/Waq-.../<ts>/              before randomization → alive
+└── _archive_3000it_stairheavy/rsl_rl/Waq-.../<ts>/        KL sum + β→4 → rough is kl_overpressure,
+                                                          flat is NaN
 ```
 
-다른 곳에 풀었거나 자기 학습 결과를 보고 싶으면 폴더를 직접 준다. 여러 번 줄 수 있다.
+If you extracted them elsewhere or want to look at your own training results, give the folder directly. It can be given multiple times.
 
 ```bash
-~/IsaacLab/_isaac_sim/python.sh starter.py --run /어디/에/풀었든/<timestamp>
+~/IsaacLab/_isaac_sim/python.sh starter.py --run /wherever/you/extracted/<timestamp>
 ```
 
-> **`_archive_3000it_stairheavy` 의 Waq 만 `model_5999.pt` 로 끝난다.** 3000 it 런인데 왜
-> 5999 인가 — 당시 `OnPolicyRunnerWaq` 가 `current_learning_iteration` 을 **이중 계산**해
-> 마지막 체크포인트 이름만 틀리게 붙였다 (커밋 `1b4a92b` 에서 수정). 같은 폴더의 Base/Oracle 은
-> stock runner 라 `model_2999.pt` 로 정상이고, tfevents 도 step 0..2999 다. **가중치는 3000 it
-> 시점의 것이고 파일 이름만 틀렸다.** 실제 자산이므로 이름은 바꾸지 않았다.
-> — 이것도 "산출물끼리 어긋나면 먼저 설정과 코드를 의심한다" 의 예다.
+> **Only the Waq of `_archive_3000it_stairheavy` ends with `model_5999.pt`.** Why 5999 for a 3000 it run
+> — at the time `OnPolicyRunnerWaq` **double-counted** `current_learning_iteration`, so
+> only the name of the last checkpoint was wrong (fixed in commit `1b4a92b`). The Base/Oracle in the same folder use the
+> stock runner, so they're correctly `model_2999.pt`, and the tfevents are step 0..2999 too. **The weights are from
+> it 3000; only the file name is wrong.** Since it's a real asset, the name wasn't changed.
+> — This is also an example of "when outputs disagree with each other, suspect the settings and code first".
 
-### `|mu|` 말고 다른 지표는 점끼리 비교하지 않는다
+### Don't compare metrics other than `|mu|` point to point
 
-붕괴한 인코더는 **입력 대부분에 상수를 뱉고 아주 드문 입력에만 크게 반응한다.** 그래서
-`kl` 과 `est_vel_std` 는 꼬리가 무거운 통계가 된다 — 2500 it 체크포인트에서 실측하면
-전체 `est_vel` 분산의 **89%가 상위 0.1% 표본에서** 나온다. 결과적으로 같은 체크포인트인데도
+A collapsed encoder **emits a constant for most inputs and reacts strongly only to very rare inputs.** So
+`kl` and `est_vel_std` become heavy-tailed statistics — measured on the 2500 it checkpoint,
+**89% of the total `est_vel` variance comes from the top 0.1% of samples**. As a result, even for the same checkpoint
 
-| 프로브 | `est_vel_std` |
+| Probe | `est_vel_std` |
 |---|---|
-| `num_samples=2048, seed=0` (이 실습의 기본) | 1.91e-2 |
+| `num_samples=2048, seed=0` (this exercise's default) | 1.91e-2 |
 | `num_samples=2048, seed=2` | 7.05e-2 |
 | `num_samples=8192, seed=0` | 4.07e-2 |
 
-처럼 한 자릿수 안에서 흔들린다. **그래서 이 문서의 수치는 전부 `num_samples=2048, seed=0`
-기준이다** (`PAPER.md` §4 의 표도 같은 기준이다). 판정에 `|mu|` 와 `|W_z|` 를 쓰는 이유가
-여기에도 있다 — `|W_z|` 는 아예 표본과 무관한 **가중치**라 흔들리지 않는다.
+it wobbles within an order of magnitude like this. **That's why all numbers in this document are based on `num_samples=2048, seed=0`**
+(the table in `PAPER.md` §4 uses the same basis). This is another reason `|mu|` and `|W_z|` are used for the verdict
+— `|W_z|` is a **weight**, entirely independent of samples, so it doesn't wobble.
 
-## 곁가지 — 체크포인트에 남은 다른 단서
+## A side note — other clues left in the checkpoint
 
-`cenet_state_dict` 말고도 그 런의 설정을 알려 주는 것이 체크포인트에 들어 있다.
+Besides `cenet_state_dict`, the checkpoint contains other things that reveal the run's settings.
 
-| 키 | `_archive_3000it_stairheavy` | 나머지 |
+| Key | `_archive_3000it_stairheavy` | The rest |
 |---|---|---|
-| `cenet_beta` | **4.0** (β annealing 이 상한까지 올라갔다) | 1.0 (상수) |
+| `cenet_beta` | **4.0** (β annealing went up to the cap) | 1.0 (constant) |
 
 ```python
 torch.load(ckpt, map_location="cpu", weights_only=False)["cenet_beta"]
 ```
 
-로 직접 확인해 보라. **설정이 실제로 반영됐는지는 로그가 아니라 산출물로 확인한다** —
-이 코스에서 두 번째로 나오는 교훈이다.
+and check for yourself. **Whether a setting was actually applied is confirmed by the outputs, not the logs** —
+the second time this lesson appears in this course.
 
-## 답이 정해지지 않은 질문
+## Open questions
 
-- 붕괴 런의 `est_vel_std` 도 4.8e-1 → 1.9e-2 로 함께 죽었다. `est_vel` 은 KL 이 직접
-  건드리지 않는데 **왜 같이 죽었는가?** (힌트: 인코더 trunk 를 공유한다)
-  그리고 이것이 왜 "KL 이 원인" 이라는 진단을 **약화**시키지 않고 **지지**하는가?
-- 이 프로브는 `|mu|` 가 크면 살아 있다고 본다. `|mu|` 가 크지만 **입력과 무관하게** 큰
-  인코더도 만들 수 있다. 그런 경우를 걸러내려면 어떤 지표를 더 재야 하는가?
-  (`check.py` 의 `synth(logvar_bias=...)` 가 힌트다)
-- `|W_z|` 가 죽었는데 `|mu|` 는 아직 살아 있는 체크포인트를 만났다면, 이 스크립트는 `alive`
-  라고 부른다. **그 판정을 그대로 믿을 것인가?** 몇 백 iteration 뒤에 무엇을 확인하겠는가?
-- `nan_to_num` 은 학습을 죽지 않게 했지만 고장을 3000 iteration 동안 감췄다.
-  **지우는 것이 나은가, 두고 경고를 찍는 것이 나은가?** 각각의 비용은 무엇인가?
+- The collapsed run's `est_vel_std` also died along with it, 4.8e-1 → 1.9e-2. The KL doesn't directly
+  touch `est_vel`, so **why did it die too?** (Hint: it shares the encoder trunk)
+  And why does this **support** rather than **weaken** the diagnosis "the KL is the cause"?
+- This probe considers it alive if `|mu|` is large. You can also build an encoder whose `|mu|` is large but
+  **independent of the input**. What additional metric would you need to filter out such cases?
+  (`synth(logvar_bias=...)` in `check.py` is a hint)
+- If you meet a checkpoint where `|W_z|` has died but `|mu|` is still alive, this script calls it `alive`.
+  **Will you trust that verdict as-is?** What would you check a few hundred iterations later?
+- `nan_to_num` kept training from dying but hid the failure for 3000 iterations.
+  **Is it better to remove it, or to keep it and print a warning?** What does each cost?
 
-## 코스 마무리
+## Course wrap-up
 
-여기까지 왔다면 다음을 직접 했다.
+If you've come this far, you've done the following yourself.
 
 ```
-Stage 1  Isaac Sim 에서 로봇을 세우고 관절을 움직이고 센서를 읽었다
-Stage 2  그 재료로 학습 env 를 조립했다 (보상 · 관측 · 종료)
-Stage 3  PPO 를 직접 구현하고 rsl_rl 과 대조했다
-Stage 4  CENet(VAE)을 만들어 actor 관측에 결합했다
-Stage 5  그것이 실제로 성능을 만들었는지 확인하고, 안 만들었을 때 원인을 찾았다
+Stage 1  stood a robot up in Isaac Sim, moved its joints and read its sensors
+Stage 2  assembled a training env from those ingredients (rewards · observations · termination)
+Stage 3  implemented PPO yourself and compared it with rsl_rl
+Stage 4  built CENet (VAE) and wired it into the actor observation
+Stage 5  checked whether it actually produced performance, and found the cause when it didn't
 ```
 
-마지막 단계가 가장 중요하다. **구현했다는 것과 효과가 있다는 것은 다른 주장이고,
-효과가 없을 때 왜 없는지 말할 수 있는 것이 또 다른 주장이다.**
+The last step is the most important. **Having implemented something and it being effective are different claims,
+and being able to say why it isn't effective when it isn't is yet another claim.**

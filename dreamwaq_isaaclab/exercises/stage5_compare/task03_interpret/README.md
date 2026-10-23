@@ -1,168 +1,168 @@
-# task03_interpret — 두 델타를 해석한다  `서술`
+# task03_interpret — Interpret the two deltas  `Written`
 
-**Stage 5 · 결과 비교**
+**Stage 5 · Comparing results**
 
-## 목표
+## Goal
 
-task02 가 낸 숫자로 **CENet 이 무슨 일을 했는지** 쓴다. 코드는 없다.
+Using the numbers from task02, write **what CENet did**. There's no code.
 
-미리 말해 둔다: **결과는 깔끔하지 않다.** rough 에서는 논문 순서가 나왔고 flat 에서는
-안 나왔다. 곁가지 지표 중 하나는 아예 반대를 가리킨다. 그것을 **어떻게 읽을지**가 이 과제다.
+Fair warning: **the results aren't clean.** On rough the paper ordering came out; on flat
+it didn't. One of the side metrics even points the opposite way. **How to read that** is this assignment.
 
-## 왜 이 비교가 성립하는가
+## Why this comparison holds
 
-먼저 이것부터 확인한다. 세 run 은 다음이 **전부 같다.**
+Check this first. The three runs are **identical in all of the following.**
 
-- 같은 env (`WaqOfficialRoughEnvCfg` / `OracleOfficialRoughEnvCfg` — 공식 레시피)
-- 같은 보상, 같은 지형 커리큘럼, 같은 리셋 randomization
-- 같은 PPO 하이퍼파라미터 (`[512,256,128]`, clip 0.2, desired_kl 0.01, ...)
-- 같은 예산 (**4000 iter** × 4096 envs), 같은 seed (42)
-- critic 은 셋 다 privileged 관측 (rough 는 height_scan 포함)
+- Same env (`WaqOfficialRoughEnvCfg` / `OracleOfficialRoughEnvCfg` — the official recipe)
+- Same rewards, same terrain curriculum, same reset randomization
+- Same PPO hyperparameters (`[512,256,128]`, clip 0.2, desired_kl 0.01, ...)
+- Same budget (**4000 iter** × 4096 envs), same seed (42)
+- All three critics get the privileged observation (including height_scan on rough)
 
-다른 것은 **actor 관측뿐**이다.
+The **only** difference is **the actor observation**.
 
-| | actor 관측 | 무엇을 아는가 |
+| | actor observation | What it knows |
 |---|---|---|
-| Base | 45 | 자기 관절과 IMU 만 |
-| Waq | 64 = 45 + est_vel(3) + context(16) | CENet 이 **추정한** 속도와 지형 문맥 |
-| Oracle | 48 = 45 + 실제 base_lin_vel(3) | 실제 속도를 **그냥 받는다** |
+| Base | 45 | Only its own joints and IMU |
+| Waq | 64 = 45 + est_vel(3) + context(16) | The velocity and terrain context **estimated** by CENet |
+| Oracle | 48 = 45 + actual base_lin_vel(3) | **Just receives** the actual velocity |
 
-이 통제가 있어야 차이를 관측 설계의 효과로 읽을 수 있다. 하나라도 달랐다면
-"CENet 덕분"이라고 말할 수 없다 — 그것이 confound 다.
+Only with this control can the differences be read as the effect of observation design. If even one thing differed,
+you couldn't say "thanks to CENet" — that's a confound.
 
-## 실측 결과
+## Measured results
 
-`figures/summary.csv` 와 `compare_runs.py` 의 화면 출력이다.
-(수렴 구간 = 마지막 400 iteration 평균, ± 는 그 구간의 평균의 표준오차)
+The screen output of `figures/summary.csv` and `compare_runs.py`.
+(converged section = mean of the last 400 iterations, ± is the standard error of the mean over that section)
 
-| 지형 | Base (45) | Waq (64) | Oracle (48) | Waq−Base | Oracle−Waq |
+| Terrain | Base (45) | Waq (64) | Oracle (48) | Waq−Base | Oracle−Waq |
 |---|---|---|---|---|---|
-| **rough** | 0.5492 ± 0.0015 | 0.5565 ± 0.0015 | 0.5822 ± 0.0017 | **+0.0073 ± 0.0021** (유의) | +0.0257 ± 0.0023 |
-| **flat** | 0.9383 ± 0.0003 | 0.9390 ± 0.0003 | 0.9460 ± 0.0002 | +0.0007 ± 0.0004 (**노이즈**) | +0.0070 ± 0.0004 |
+| **rough** | 0.5492 ± 0.0015 | 0.5565 ± 0.0015 | 0.5822 ± 0.0017 | **+0.0073 ± 0.0021** (significant) | +0.0257 ± 0.0023 |
+| **flat** | 0.9383 ± 0.0003 | 0.9390 ± 0.0003 | 0.9460 ± 0.0002 | +0.0007 ± 0.0004 (**noise**) | +0.0070 ± 0.0004 |
 
-곁가지 지표 (rough, 같은 구간):
+Side metrics (rough, same section):
 
-| 태그 | Base | Waq | Oracle |
+| Tag | Base | Waq | Oracle |
 |---|---|---|---|
 | `Curriculum/terrain_levels` | 2.984 | 2.997 | **3.163** |
 | `Train/mean_episode_length` | 936.5 | **918.7** | 950.0 |
 | `Episode_Termination/base_contact` | 0.093 | **0.123** | 0.068 |
 | `Metrics/base_velocity/error_vel_xy` | 0.423 | 0.410 | 0.405 |
 
-그리고 **flat 에서만 보이는 것** — 탐색 노이즈(`Policy/mean_std`, 수렴 구간 평균):
+And **what's visible only on flat** — exploration noise (`Policy/mean_std`, mean over the converged section):
 
-| 지형 | Base | Waq | Oracle |
+| Terrain | Base | Waq | Oracle |
 |---|---|---|---|
-| rough | 0.9999 | 0.9999 | 0.9999 | ← 셋 다 상한 σ=1 에 100% 붙어 있다 |
-| flat | 0.973 | **0.767** | 0.948 | ← Waq 만 뚜렷하게 낮다 |
+| rough | 0.9999 | 0.9999 | 0.9999 | ← all three are stuck 100% at the upper bound σ=1 |
+| flat | 0.973 | **0.767** | 0.948 | ← only Waq is distinctly lower |
 
-## 쓸 것 — 네 개의 질문
+## What to write — four questions
 
-### 1. 두 지형의 **여유폭**을 먼저 재라
+### 1. Measure the **headroom** of the two terrains first
 
-`Waq−Base` 는 rough 에서 +0.0073, flat 에서 +0.0007 이다. 열 배 차이다.
-여기서 "flat 에서는 CENet 이 쓸모없다"로 건너뛰기 전에, 다음을 **직접 계산**하라.
+`Waq−Base` is +0.0073 on rough and +0.0007 on flat. A tenfold difference.
+Before jumping to "CENet is useless on flat", **compute the following yourself**.
 
-- 각 지형의 **전체 여유폭** `Oracle − Base` 는 얼마인가? (두 지형 각각)
-- 그 여유폭 대비 `Waq−Base` 는 몇 %인가?
-- flat 의 Base 는 이미 몇 점인가? 이 지표의 상한은 얼마인가?
+- What is each terrain's **total headroom** `Oracle − Base`? (for each of the two terrains)
+- What % of that headroom is `Waq−Base`?
+- What score is flat's Base already at? What is the upper bound of this metric?
 
-그 다음 답하라.
+Then answer.
 
-- flat 의 `Waq−Base` 가 작은 것은 **CENet 이 일을 안 해서**인가, 아니면
-  **애초에 잴 자리가 없어서**인가? 두 설명을 구분할 근거는 무엇인가?
-- 만약 flat 에서 `Oracle−Base` 도 작다면, 그건 "속도 정보 자체가 flat 에서는
-  별 도움이 안 된다"는 뜻인가? 그렇다면 CENet 에 무엇을 기대해야 옳은가?
-- 이 결과는 논문의 주장(**지형 상상**이 핵심이라는 것)과 **같은 방향인가 반대 방향인가?**
-- flat 에서 Waq 의 **탐색 노이즈만 유독 낮다**(0.767 vs Base 0.973). 추종 점수는 같은데
-  정책이 훨씬 **확신을 갖고** 움직였다는 뜻이다. 이것을 "CENet 이 아무 일도 안 했다" 의
-  반례로 쓸 수 있는가? 쓸 수 있다면 어떤 조건에서, 없다면 왜인가?
-  (생각해 볼 점: 낮은 std 는 좋은 것인가? 무엇을 희생한 것일 수 있는가?)
+- Is flat's small `Waq−Base` because **CENet didn't do its job**, or because
+  **there was no room to measure in the first place**? What evidence distinguishes the two explanations?
+- If `Oracle−Base` is also small on flat, does that mean "velocity information itself
+  doesn't help much on flat"? If so, what is it right to expect from CENet?
+- Is this result **in the same direction as, or opposite to,** the paper's claim (that **terrain imagination** is the key)?
+- On flat, **only Waq's exploration noise is especially low** (0.767 vs Base 0.973). The tracking score is the same, but
+  it means the policy moved with much more **confidence**. Can this be used as a counterexample to "CENet did nothing"?
+  If so, under what conditions; if not, why not?
+  (Something to think about: is a low std good? What might it have sacrificed?)
 
-> 여기서 결론을 뒤집는 실수가 흔하다. 두 지형의 델타를 **절대값끼리** 비교하면
-> 한쪽이 천장에 붙어 있다는 사실이 지워진다. 분모를 정하고 비교하라.
+> A common mistake here flips the conclusion. Comparing the two terrains' deltas **in absolute terms**
+> erases the fact that one of them is stuck at the ceiling. Fix a denominator, then compare.
 
-### 2. `Oracle − Waq` = 남은 격차. "근접" 이라고 부를 수 있는가
+### 2. `Oracle − Waq` = remaining gap. Can it be called "close"?
 
-Oracle 은 실제 속도를 공짜로 받는 **상한**이다.
+Oracle is the **upper bound** that gets the actual velocity for free.
 
-- rough 에서 CENet 은 전체 여유폭의 몇 %를 회수했는가? (1번에서 이미 계산했다)
-- 그 숫자를 보고 "Waq 가 Oracle 에 근접했다"고 쓸 수 있는가? **쓸 수 없다면 왜인가?**
-- Waq 는 속도 3차원 **외에 context 16차원도 더** 받는다. 정보량만 보면 Oracle 보다 많다.
-  그런데도 못 이긴다. 문제는 정보의 **양**인가 **질**인가?
-  이것을 어떻게 확인할 수 있는가? (힌트: `scripts/rsl_rl/collect_velocity.py` 는 추정 속도와 실제 속도의
-  궤적을 나란히 뽑는다. `Loss/cenet_vel` 도 tensorboard 에 있다)
+- What % of the total headroom did CENet recover on rough? (you already computed this in 1)
+- Seeing that number, can you write "Waq came close to Oracle"? **If not, why not?**
+- Waq receives the 3 velocity dims **plus 16 more context dims**. In terms of information alone, it has more than Oracle.
+  Yet it can't win. Is the problem the **quantity** or the **quality** of the information?
+  How could you check this? (Hint: `scripts/rsl_rl/collect_velocity.py` extracts the estimated and actual velocity
+  trajectories side by side. `Loss/cenet_vel` is also in tensorboard)
 
-### 3. 곁가지 지표가 **엇갈린다**. 이것을 어떻게 쓸 것인가
+### 3. The side metrics **disagree**. How will you write about this?
 
-rough 에서 Waq 는 Base 보다 속도 추종이 낫지만,
+On rough, Waq tracks velocity better than Base, but
 
-- `base_contact` 가 **더 높다** (0.123 vs 0.093 — 더 자주 넘어진다)
-- `mean_episode_length` 가 **더 짧다** (918.7 vs 936.5)
-- `terrain_levels` 는 거의 같다 (2.997 vs 2.984)
+- `base_contact` is **higher** (0.123 vs 0.093 — it falls more often)
+- `mean_episode_length` is **shorter** (918.7 vs 936.5)
+- `terrain_levels` is about the same (2.997 vs 2.984)
 
-반면 Oracle 은 **네 지표 모두** Base 보다 낫다.
+Oracle, on the other hand, is better than Base on **all four metrics**.
 
-- "CENet 이 도움이 된다"는 주장을 이 표가 **뒷받침하는가, 제한하는가?**
-- 속도 추종은 올라가는데 넘어짐은 늘어나는 조합을 설명할 가설을 두 개 이상 세워라.
-  (예: 더 공격적으로 걷는다 / 추정 속도가 틀렸을 때 위험하게 반응한다 / 그냥 노이즈다)
-- 그 가설들을 **구분할 실험**은 무엇인가? 지금 있는 자산으로 할 수 있는 것이 있는가?
-- 논문의 주장은 "속도 추종"인가 "안정성"인가? 어느 지표로 판정하는 것이 옳은가?
+- Does this table **support or limit** the claim "CENet helps"?
+- Come up with two or more hypotheses explaining the combination of better velocity tracking and more falls.
+  (e.g. it walks more aggressively / it reacts dangerously when the estimated velocity is wrong / it's just noise)
+- What **experiment would distinguish** those hypotheses? Is there anything you can do with the assets you have now?
+- Is the paper's claim about "velocity tracking" or "stability"? Which metric is the right one to judge by?
 
-**이 항목을 빼고 쓰면 감점이다.** 유리한 지표만 고르는 것이 이 코스가 경계하는 바로 그것이다.
+**Leaving this item out costs points.** Cherry-picking favorable metrics is exactly what this course guards against.
 
-### 4. 한계를 스스로 밝혀라
+### 4. State the limitations yourself
 
-아래는 **전부 실제로 이 결과에 걸려 있는 제약**이다. 해당하는 것을 골라 쓰고,
-각각이 결론을 **어느 방향으로** 흔들 수 있는지 한 줄씩 적어라.
+The following are **all constraints that actually apply to this result**. Pick the relevant ones and,
+for each, write one line on **in which direction** it could sway the conclusion.
 
-| 제약 | 실측 근거 |
+| Constraint | Measured evidence |
 |---|---|
-| **단일 seed** | seed 42 하나. `±` 는 한 run **안**의 출렁임만 재고 seed 간 변동은 안 잰다 |
-| **탐색 노이즈가 천장** | rough 세 run 모두 수렴 구간의 `Policy/mean_std` 가 **0.9999** 다 — 마지막 400 iteration 의 **100%** 를 상한 σ=1 에서 보냈다. 액션이 최대 노이즈에 덮인 상태에서 잰 3차원 속도 추정의 이득이다 (flat 은 그렇지 않다 — 0.77~0.97) |
-| **AdaBoot 이 시간 기반** | AdaBoot 은 actor 에게 **추정 속도**를 먹일 확률 `p_boot` 를 학습 중에 올리는 장치다 (나머지 확률로는 참 속도를 먹인다 — `runner-augment` 실습의 `boot_mask`). 논문은 보상의 변동계수로 정해서(`p_boot = 1 − tanh(CV(R))`, eq.8) 추정기가 망가지면 자동으로 참 속도로 되돌아가는데, 구현은 **선형 램프**라 되돌아가지 않는다 (`Loss/boot_prob` 가 it 2000 에 0.9 로 고정) (PAPER.md §5) |
-| **보상·랜덤화 누락** | 논문 Table I 의 12항 중 5항이 실제 학습에 없고, Table II 의 도메인 랜덤화도 상당수 빠져 있다 (PAPER.md §2·§6) |
-| **로봇이 다르다** | 논문은 A1, 여기는 Go2. 절대 수치를 논문과 직접 비교할 수 없다 |
+| **Single seed** | Only seed 42. `±` measures only fluctuation **within** one run, not variation across seeds |
+| **Exploration noise at the ceiling** | For all three rough runs, `Policy/mean_std` over the converged section is **0.9999** — **100%** of the last 400 iterations were spent at the upper bound σ=1. It's the gain from a 3-dim velocity estimate measured while actions were drowned in maximum noise (flat isn't like that — 0.77–0.97) |
+| **AdaBoot is time-based** | AdaBoot is a mechanism that raises, during training, the probability `p_boot` of feeding the actor the **estimated velocity** (with the remaining probability it feeds the true velocity — `boot_mask` in the `runner-augment` exercise). The paper sets it by the coefficient of variation of the reward (`p_boot = 1 − tanh(CV(R))`, eq.8), so it automatically reverts to the true velocity if the estimator breaks, but the implementation is a **linear ramp** and doesn't revert (`Loss/boot_prob` fixed at 0.9 from it 2000) (PAPER.md §5) |
+| **Missing rewards and randomization** | 5 of the 12 terms in the paper's Table I aren't in the actual training, and much of Table II's domain randomization is missing too (PAPER.md §2·§6) |
+| **Different robot** | The paper uses A1, here it's Go2. Absolute numbers can't be compared directly with the paper |
 
-**한계를 적는 것은 감점 요인이 아니라 가점 요인이다.** 적지 않으면 감점이다.
+**Writing down limitations earns points, not loses them.** Not writing them loses points.
 
-## 순서가 안 나왔다면
+## If the ordering didn't come out
 
-flat 에서는 실제로 안 나왔다. 그리고 **이 프로젝트의 이전 런에서는 rough 에서도 안 나왔다**
-(`Waq − Base = −0.0166`, CENet 이 오히려 해로웠다). 그럴 때 점검 순서는 이렇다.
+On flat it actually didn't. And **in an earlier run of this project it didn't come out on rough either**
+(`Waq − Base = −0.0166`; CENet was actually harmful). In that case, the order of checks is this.
 
-| 의심 | 어떻게 확인하나 |
+| Suspicion | How to check |
 |---|---|
-| 차이가 노이즈에 묻힌다 | 평균 창을 키우고 표준오차와 비교한다 (task02). 델타가 `Oracle−Base` 보다 크면 애초에 말이 안 된다 |
-| 잴 자리가 없다 | `Oracle−Base` 자체가 작은가. flat 이 이 경우다 |
-| 예산 부족 | 곡선이 아직 오르는 중인가, 평평해졌는가 (`curves_rough.png`) |
-| **추정기가 죽었다** | 체크포인트 인코더에 랜덤 입력을 넣어 출력이 움직이는지 본다 → [`task04_diagnose`](../task04_diagnose/) |
-| 추정이 부정확하다 | `Loss/cenet_vel` 곡선, `scripts/rsl_rl/collect_velocity.py` 의 추정 vs 실제 궤적 |
-| seed 운 | seed 를 바꿔 1~2 run 더 (비용이 크다 — 우선순위 낮음) |
+| The difference is buried in noise | Enlarge the averaging window and compare with the standard error (task02). If the delta exceeds `Oracle−Base`, it doesn't make sense in the first place |
+| No room to measure | Is `Oracle−Base` itself small? Flat is this case |
+| Insufficient budget | Is the curve still rising, or has it flattened? (`curves_rough.png`) |
+| **The estimator died** | Feed random inputs into the checkpoint's encoder and see whether the output moves → [`task04_diagnose`](../task04_diagnose/) |
+| The estimate is inaccurate | The `Loss/cenet_vel` curve, and the estimated vs actual trajectories from `scripts/rsl_rl/collect_velocity.py` |
+| Seed luck | 1–2 more runs with different seeds (expensive — low priority) |
 
-`Loss/cenet_{total,vel,recon,kl,beta}` 와 `Loss/boot_prob` 는 배포 런의 tensorboard 에
-들어 있다. 보관된 이전 런에는 **없다** — 그 로깅은 나중에 추가됐고, 그래서 그때는
-체크포인트 포렌식밖에 할 수 없었다. **진단할 수 없는 것은 고칠 수 없다.**
+`Loss/cenet_{total,vel,recon,kl,beta}` and `Loss/boot_prob` are in the tensorboard of the distributed runs.
+They are **not** in the archived earlier run — that logging was added later, so back then
+checkpoint forensics was all that could be done. **What you can't diagnose, you can't fix.**
 
-## 분량과 채점
+## Length and grading
 
-A4 한 장. 표 하나 + 문단 서넛.
+One A4 page. One table + three or four paragraphs.
 
-| 항목 | |
+| Item | |
 |---|---|
-| 수치를 정확히 옮겼는가 | 유효숫자와 ± 를 함께 |
-| 두 여유폭을 **분모로 정규화**해 비교했는가 | 1번의 핵심 |
-| 회수율을 정직하게 적었는가 | 계산한 %를 그대로 쓴다. "Oracle 에 근접" 은 그 %가 뒷받침할 때만 |
-| 엇갈리는 곁가지 지표를 **숨기지 않았는가** | 3번 |
-| 한계를 스스로 밝혔는가 | 4번. **가점** |
-| 메커니즘을 설명했는가 | "왜 그런지" 없이 "무엇이 나왔는지"만 쓰면 감점 |
+| Were the numbers transcribed accurately? | With significant figures and ± |
+| Were the two headrooms compared **normalized by a denominator**? | The core of question 1 |
+| Was the recovery rate written honestly? | Write the computed % as-is. "Close to Oracle" only when that % supports it |
+| Were the disagreeing side metrics **not hidden**? | Question 3 |
+| Were the limitations stated by yourself? | Question 4. **Bonus points** |
+| Was the mechanism explained? | Writing only "what came out" without "why" loses points |
 
-**나쁜 답**: "Waq 가 Base 보다 0.0073 높다. CENet 이 효과가 있다."
+**Bad answer**: "Waq is 0.0073 higher than Base. CENet is effective."
 
-**좋은 답**: 수치를 적고 → 표준오차와 비교해 유의성을 판단하고 → 두 지형의 여유폭으로
-정규화해 메커니즘을 설명하고 → 곁가지 지표가 엇갈린다는 것을 밝히고 → 회수율을
-과장하지 않고 → 남은 불확실성을 스스로 적는다.
+**Good answer**: state the numbers → judge significance against the standard error → normalize by the two terrains' headroom
+to explain the mechanism → disclose that the side metrics disagree → don't exaggerate
+the recovery rate → write down the remaining uncertainty yourself.
 
-## 다음
+## Next
 
-- [`task04_diagnose`](../task04_diagnose/) — 이 결과가 뒤집혔던 적이 있다. 그때 어떻게 찾았나 (L2)
+- [`task04_diagnose`](../task04_diagnose/) — this result was once flipped. How was the cause found then (L2)

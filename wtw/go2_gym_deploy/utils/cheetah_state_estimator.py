@@ -9,7 +9,7 @@ from go2_gym_deploy.lcm_types.leg_control_data_lcmt import leg_control_data_lcmt
 from go2_gym_deploy.lcm_types.rc_command_lcmt import rc_command_lcmt
 from go2_gym_deploy.lcm_types.state_estimator_lcmt import state_estimator_lcmt
 
-# 不调用相机 !!!
+# Camera is not used !!!
 # from go1_gym_deploy.lcm_types.camera_message_lcmt import camera_message_lcmt
 # from go1_gym_deploy.lcm_types.camera_message_rect_wide import camera_message_rect_wide
 
@@ -50,7 +50,7 @@ def get_rotation_matrix_from_rpy(rpy):
 class StateEstimator:
     def __init__(self, lc, use_cameras=False):  # defaul use_cameras=True
 
-        # 这里腿的顺序为什么要转换？
+        # Why does the leg order need to be converted here?
         # reverse legs
         self.joint_idxs = [3, 4, 5, 0, 1, 2, 9, 10, 11, 6, 7, 8]
         self.contact_idxs = [1, 0, 3, 2]
@@ -363,7 +363,7 @@ class StateEstimator:
 
         # print(self.right_stick, self.left_stick)
 
-    # 是否要删除下面的camera相关函数？
+    # Should the camera-related functions below be removed?
     # --------------------------------------------------
     # def _camera_cb(self, channel, data):
     #     msg = camera_message_lcmt.decode(data)

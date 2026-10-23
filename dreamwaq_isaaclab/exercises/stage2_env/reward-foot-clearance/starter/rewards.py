@@ -100,15 +100,15 @@ def foot_clearance_l2(
             Ignored — kept for backward-compatible call sites.
     """
     # ── TODO(reward-foot-clearance) ─ level L2 ─────────────────────────────
-    # 발 높이를 '지형 위 높이'로 바꾸고, 목표 클리어런스와의 차이를 측면 속도로 가중해 합한다
-    #   hint: feet_pos_w[:, :, 2] 는 월드 z 다. 지형이 울퉁불퉁하면 그대로 쓸 수 없다
-    #   hint: height_sensor 의 ray_hits_w[..., 2] 평균을 지형 높이로 근사한다 (task05 의 height scan 과 같은 발상)
-    #   hint: ray hit 에는 NaN/inf 가 섞일 수 있다. torch.nan_to_num 으로 0 으로 만든다
-    #   hint: height_sensor_cfg 가 None 이면 지형 보정 없이 월드 z 를 그대로 쓴다 (평지 전용 폴백)
-    #   hint: 측면 속도 = sqrt(vx^2 + vy^2). z 속도는 넣지 않는다
-    #   hint: 왜 속도로 가중하는가: 발을 들어 '옮기는 중'일 때만 클리어런스를 요구하고, 딛고 서 있는 발은 벌하지 않기 위해서다
-    #   hint: 발 4개에 대해 dim=1 로 합해 env 당 스칼라를 만든다
-    # 통과 기준은 이 실습 폴더의 README.md 를 본다.
+    # Convert foot height to 'height above terrain', and sum the difference from the target clearance weighted by lateral velocity
+    #   hint: feet_pos_w[:, :, 2] is world z. On bumpy terrain it can't be used as-is
+    #   hint: Approximate terrain height with the mean of height_sensor's ray_hits_w[..., 2] (same idea as task05's height scan)
+    #   hint: ray hits can contain NaN/inf. Turn them into 0 with torch.nan_to_num
+    #   hint: If height_sensor_cfg is None, use world z as-is without terrain correction (flat-only fallback)
+    #   hint: Lateral velocity = sqrt(vx^2 + vy^2). Don't include z velocity
+    #   hint: Why weight by velocity: to demand clearance only while the foot is lifted and 'moving', and not penalize a foot planted on the ground
+    #   hint: Sum over the 4 feet with dim=1 to get one scalar per env
+    # For the pass criteria, see README.md in this exercise folder.
     raise NotImplementedError("TODO(reward-foot-clearance)")
     # ─────────────────────────────────────────────────────────────────────
 

@@ -1,88 +1,88 @@
-# Stage 3 — 학습 알고리즘 PPO
+# Stage 3 — Training algorithm PPO
 
-이 프로젝트는 `rsl_rl` 의 PPO 를 **그대로 쓴다.** 직접 구현한 것이 없다.
-그래서 이 stage 는 **분리해서** 다룬다.
+This project uses `rsl_rl`'s PPO **as-is.** Nothing is implemented in-house.
+So this stage is covered **separately**.
 
 ```
-1) 최소 PPO 를 직접 구현      (L2)  <- Isaac Sim 없이 도는 독립 스크립트
-2) rsl_rl PPO 를 읽고 매핑     (L0)  <- "내가 짠 게 여기 이 클래스다"
-3) cfg 하이퍼파라미터 실습     (L1)
+1) Implement a minimal PPO yourself      (L2)  <- standalone script that runs without Isaac Sim
+2) Read rsl_rl's PPO and map it          (L0)  <- "what I wrote is this class right here"
+3) cfg hyperparameter exercise           (L1)
 ```
 
-## toy 환경 — 로코모션의 축소판
+## Toy environment — a miniature of locomotion
 
-CartPole 같은 무관한 문제 대신, **DreamWaQ 와 같은 "명령 속도 추종"** 문제를 쓴다.
-보상 함수까지 논문 Table I 과 같은 형태다.
+Instead of an unrelated problem like CartPole, we use the **same "commanded velocity tracking"** problem as DreamWaQ.
+Even the reward function has the same form as the paper's Table I.
 
 | toy (`toy_env.py`) | DreamWaQ |
 |---|---|
-| `v` (1D 속도) | `base_lin_vel` |
+| `v` (1D velocity) | `base_lin_vel` |
 | `v_cmd` | `velocity_commands` |
-| `a` (가속도) | 관절 목표 오프셋 (`action * 0.25`) |
+| `a` (acceleration) | joint target offset (`action * 0.25`) |
 | `exp{-4 e²}` | `track_lin_vel_xy_exp` (`std=√0.25`) |
-| `drag` | 지면 마찰 / 중력 |
+| `drag` | ground friction / gravity |
 
 ```bash
 python toy_env.py
 ```
 
 ```
-완벽 추종 보상 : 1.0000
-정지 시 보상   : 0.4426   <- 학습이 이걸 못 넘으면 실패
-랜덤 정책 평균 : 0.5333
+Perfect tracking reward : 1.0000
+Standing-still reward   : 0.4426   <- training fails if it can't beat this
+Random policy mean      : 0.5333
 ```
 
-**`0.4426` 이 이 stage 의 하한선이다.** DreamWaQ 에서 "서 있기가 최적" 이 되는 실패와
-같은 발상 — 정책이 아무것도 배우지 않으면 이 근처에 머문다.
+**`0.4426` is this stage's floor.** It's the same idea as the failure in DreamWaQ where "standing still is optimal"
+— if the policy learns nothing, it stays around here.
 
-## 실습 목록
+## Exercise list
 
-| # | 실습 | 레벨 | 검사 |
+| # | Exercise | Level | Check |
 |:---:|---|:---:|:---:|
 | 01 | [`task01_gae`](task01_gae/) | **L2** | 8 |
 | 02 | [`task02_ppo_update`](task02_ppo_update/) | **L2** | 10 |
 | 03 | [`task03_rsl_rl_map`](task03_rsl_rl_map/) | **L0** | — |
 | 04 | [`task04_ppo_cfg`](task04_ppo_cfg/) | **L1** | 14 |
 
-01·02 는 `ppo.py` 한 파일의 서로 다른 부분을 채운다. `starter.py` 는 자기 실습
-부분만 비어 있고 나머지는 정답이 들어 있으므로, **어느 쪽부터 해도 된다.**
+01·02 fill in different parts of the same file, `ppo.py`. Each `starter.py` has only its own exercise's
+part blank and the answer in the rest, so **you can start with either one.**
 
-03 은 읽기만 한다 — 01·02 를 끝낸 뒤에 해야 의미가 있다. 04 는 03 에서 "우리에게
-없는 것" 으로 넘긴 적응형 학습률을 직접 채운다. **01·02 → 03 → 04 순서를 지킨다.**
+03 is reading only — it only makes sense after finishing 01·02. 04 fills in the adaptive learning rate
+that 03 passed over as "something we don't have". **Stick to the order 01·02 → 03 → 04.**
 
-## 다 채우면 실제로 학습이 돌아간다
+## Once everything is filled in, training actually runs
 
 ```bash
 cd task01_gae && python starter.py
 ```
 
 ```
-정지 시 보상(하한선) : 0.4426
+Standing-still reward (floor) : 0.4426
 
-  iter    0 | 평균 보상 0.4379 | std 1.011
-  iter   20 | 평균 보상 0.8670 | std 0.944
+  iter    0 | mean reward 0.4379 | std 1.011
+  iter   20 | mean reward 0.8670 | std 0.944
   ...
-  iter  199 | 평균 보상 0.9562 | std 0.727
+  iter  199 | mean reward 0.9562 | std 0.727
 
-최종 평균 보상 : 0.9455  (하한선 0.4426, 완벽 추종 1.0)
-학습 성공
+Final mean reward : 0.9455  (floor 0.4426, perfect tracking 1.0)
+Training succeeded
 ```
 
-CPU 로 40초쯤 걸린다. `std` 가 1.0 에서 서서히 줄어드는 것도 같이 본다 —
-정책이 확신을 갖게 되면서 탐험을 줄이는 과정이다. (Stage 2 의 log_std 이야기와 이어진다.)
+It takes about 40 seconds on CPU. Also watch `std` gradually decrease from 1.0 —
+that's the policy reducing exploration as it gains confidence. (This connects to the log_std story in Stage 2.)
 
-## 실제 프로젝트와의 대응
+## Correspondence with the real project
 
-`ppo.py` 는 규모만 줄였을 뿐 골격이 같다.
+`ppo.py` only shrinks the scale; the skeleton is the same.
 
-| `ppo.py` | 실제 프로젝트 |
+| `ppo.py` | Real project |
 |---|---|
 | `ActorCritic` 64-64 | actor/critic 512-256-128 (`rsl_rl_ppo_cfg.py`) |
-| `log_std` 파라미터 | `init_noise_std=1.0` + `train.py` 의 log_std clamp |
+| `log_std` parameter | `init_noise_std=1.0` + the log_std clamp in `train.py` |
 | `compute_gae` | `rsl_rl` `RolloutStorage.compute_returns` |
 | `ppo_losses` | `rsl_rl` `PPO.update` |
-| `train()` 루프 | `OnPolicyRunner.learn()` |
-| `clip=0.2, γ=0.99, λ=0.95, lr=1e-3` | **논문 §III-B 와 동일** |
+| `train()` loop | `OnPolicyRunner.learn()` |
+| `clip=0.2, γ=0.99, λ=0.95, lr=1e-3` | **Same as paper §III-B** |
 
-마지막 줄이 중요하다 — toy 스크립트의 PPO 하이퍼파라미터는 임의로 고른 것이 아니라
-논문이 명시한 값이다.
+The last row matters — the toy script's PPO hyperparameters weren't picked arbitrarily; they are
+the values specified in the paper.

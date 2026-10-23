@@ -1,8 +1,8 @@
-# task02 — PPO 손실 함수  `L2 · BUILD`
+# task02 — PPO loss function  `L2 · BUILD`
 
-## 목표
+## Goal
 
-PPO 를 PPO 답게 만드는 **clipped surrogate objective** 를 만든다.
+Build the **clipped surrogate objective** that makes PPO PPO.
 
 ```
 ratio = exp(log_prob - old_log_prob)
@@ -12,48 +12,48 @@ entropy_loss = -mean(entropy)
 total = surrogate + c_v · value_loss + c_e · entropy_loss
 ```
 
-## 채울 곳
+## What to fill in
 
-`starter.py` 의 `TODO(ppo-losses)` — `ppo_losses` 본문.
+`TODO(ppo-losses)` in `starter.py` — the body of `ppo_losses`.
 
-**핵심은 `min` 이다**
+**The key is `min`**
 
-`clip` 만 쓰면 안 된다. `min(unclipped, clipped)` 이어야 한다.
+Using only `clip` is wrong. It must be `min(unclipped, clipped)`.
 
-| 상황 | 왜 |
+| Situation | Why |
 |---|---|
-| `A>0`, `ratio` 가 **위로** 벗어남 | 클립 → 좋은 행동이라도 한 번에 너무 밀지 않는다 |
-| `A>0`, `ratio` 가 **아래로** 벗어남 | **클립 안 함** → 되돌릴 여지를 남긴다 |
-| `A<0`, `ratio` 가 아래로 벗어남 | 클립 |
-| `A<0`, `ratio` 가 위로 벗어남 | 클립 안 함 |
+| `A>0`, `ratio` deviates **upward** | Clip → don't push even a good action too far at once |
+| `A>0`, `ratio` deviates **downward** | **No clip** → leaves room to undo it |
+| `A<0`, `ratio` deviates downward | Clip |
+| `A<0`, `ratio` deviates upward | No clip |
 
-`min` 은 "**항상 비관적인 쪽**을 택한다"는 뜻이다. 검사 8번이 정확히 이걸 잡는다.
+`min` means "**always take the pessimistic side**". Check 8 catches exactly this.
 
-## 검증
+## Checks
 
 ```bash
 python check.py
 ```
 
-| # | 통과 기준 |
+| # | Pass criterion |
 |:---:|---|
-| 1 | 네 값이 모두 스칼라 |
-| 2 | `ratio=1` 일 때 `surrogate = -mean(A)` |
+| 1 | All four values are scalars |
+| 2 | With `ratio=1`, `surrogate = -mean(A)` |
 | 3 | `value_loss` = MSE |
-| 4 | `entropy_loss = -mean(entropy)` — **부호 주의** |
-| 5 | `total` 이 계수로 가중 합 |
-| 6 | `A>0`, `ratio` 상한 초과 → 클립됨 |
-| 7 | `A<0`, `ratio` 하한 미만 → 클립됨 |
-| 8 | **`A>0`, `ratio` 하한 미만 → 클립 안 함** (`min` 을 썼다) |
-| 9 | advantage 에는 클립을 걸지 않는다 |
-| 10 | gradient 가 흐른다 |
+| 4 | `entropy_loss = -mean(entropy)` — **watch the sign** |
+| 5 | `total` is the coefficient-weighted sum |
+| 6 | `A>0`, `ratio` above the upper bound → clipped |
+| 7 | `A<0`, `ratio` below the lower bound → clipped |
+| 8 | **`A>0`, `ratio` below the lower bound → not clipped** (`min` was used) |
+| 9 | The advantage is not clipped |
+| 10 | Gradient flows |
 
-## 부호 하나로 학습이 뒤집힌다
+## One sign flips training
 
-- **surrogate**: 목적함수는 `ratio·A` 를 **최대화**하는 것이지만 optimizer 는 최소화하므로 `-` 를 붙인다
-- **entropy**: 엔트로피는 **크게** 만들고 싶으므로 손실에는 `-` 로 들어간다.
-  부호를 뒤집으면 정책이 즉시 결정론적으로 붕괴해 탐험이 사라진다
+- **surrogate**: the objective is to **maximize** `ratio·A`, but the optimizer minimizes, so add a `-`
+- **entropy**: we want entropy to be **large**, so it enters the loss with a `-`.
+  Flip the sign and the policy immediately collapses to deterministic and exploration disappears
 
-## 다 하면
+## When you're done
 
-`python starter.py` 로 실제 학습이 돈다 (약 40초). 보상이 0.44 → 0.95 로 오르면 성공.
+`python starter.py` runs real training (about 40 s). Success if the reward rises from 0.44 → 0.95.

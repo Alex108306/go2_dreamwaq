@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
-"""각 run 의 체크포인트를 전부 평가해 **best policy** 를 고른다.
+"""Evaluate every checkpoint of each run and pick the **best policy**.
 
-`compare_runs.py` 는 학습 곡선(수렴 구간 평균)으로 비교한다. 그건 "학습이 어디까지 갔나"는
-알려주지만 **배포할 정책**의 성능은 아니다. 강화학습 성능 비교는 마지막 체크포인트가 아니라
-**가장 좋은 체크포인트**로 해야 한다 — 마지막이 최고라는 보장이 전혀 없기 때문이다.
+`compare_runs.py` compares using training curves (mean over the converged section). That tells you "how far training got",
+but not the performance of the **policy you would deploy**. RL performance comparisons should use the **best checkpoint**,
+not the last one — there is no guarantee whatsoever that the last one is the best.
 
-이 프로젝트가 실제로 그런 경우다. Waq 의 CENet 은 학습 도중 posterior collapse 를 일으켜
-**뒤로 갈수록 나빠진다.** 마지막 체크포인트로만 비교하면 CENet 을 부당하게 과소평가한다.
+This project is exactly such a case. Waq's CENet suffers posterior collapse during training
+and **gets worse toward the end.** Comparing only the last checkpoints unfairly underestimates CENet.
 
-각 체크포인트마다 고정된 조건(같은 seed, 같은 env 수, 같은 스텝 수)으로 굴려
-속도추종(underlying) 을 매 스텝 직접 계산해 재고, run 별 best 를 표로 낸다.
+Each checkpoint is rolled out under fixed conditions (same seed, same number of envs, same number of steps),
+velocity tracking (underlying) is computed directly at every step, and the best per run is tabulated.
 
     cd dreamwaq_manager
     ~/IsaacLab/_isaac_sim/python.sh scripts/eval_checkpoints.py --headless
     ~/IsaacLab/_isaac_sim/python.sh scripts/eval_checkpoints.py --headless --terrain rough
     ~/IsaacLab/_isaac_sim/python.sh scripts/eval_checkpoints.py --headless --steps 400
 
-Isaac Sim 을 체크포인트 수만큼 띄우지 않고, task 하나당 한 번만 띄워 체크포인트를 갈아끼운다.
+Instead of launching Isaac Sim once per checkpoint, it launches once per task and swaps checkpoints in.
 """
 
 import argparse
@@ -33,21 +33,21 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "rsl
 import cli_args  # isort: skip  # noqa: E402
 
 TERRAINS = ("flat", "rough")
-VARIANTS = {  # 표시이름 -> (task 접두사, experiment_name 접두사)
+VARIANTS = {  # display name -> (task prefix, experiment_name prefix)
     "Base": ("DreamWaQ-BaseDwq-{t}-PPO", "BaseDwq-Official-{t}-PPO-v0"),
     "Waq": ("DreamWaQ-Waq-Official-{t}-PPO", "Waq-Official-{t}-PPO-v0"),
     "Oracle": ("DreamWaQ-OracleDwq-{t}-PPO", "OracleDwq-Official-{t}-PPO-v0"),
 }
 
-parser = argparse.ArgumentParser(description="체크포인트를 전부 평가해 best policy 를 고른다.")
-parser.add_argument("--num_envs", type=int, default=256, help="평가에 쓸 env 수. 많을수록 분산이 준다.")
-parser.add_argument("--steps", type=int, default=600, help="체크포인트당 굴릴 스텝 수 (600 = 30s).")
+parser = argparse.ArgumentParser(description="Evaluate all checkpoints and pick the best policy.")
+parser.add_argument("--num_envs", type=int, default=256, help="Number of envs for evaluation. More envs means lower variance.")
+parser.add_argument("--steps", type=int, default=600, help="Number of steps to roll out per checkpoint (600 = 30s).")
 parser.add_argument("--terrain", choices=[*TERRAINS, "both"], default="both")
 parser.add_argument("--variant", choices=[*VARIANTS, "all"], default="all")
-parser.add_argument("--seed", type=int, default=1234, help="평가 seed (학습 seed 와 달라야 공정하다).")
+parser.add_argument("--seed", type=int, default=1234, help="Evaluation seed (should differ from the training seed to be fair).")
 parser.add_argument("--out", type=str,
                     default=os.path.join(os.path.dirname(_PROJECT_ROOT), "figures", "best_policy.csv"),
-                    help="결과 CSV 경로 (기본: repo 루트의 figures/, compare_runs.py 와 같은 곳)")
+                    help="Output CSV path (default: figures/ at the repo root, same place as compare_runs.py)")
 cli_args.add_rsl_rl_args(parser)
 AppLauncher.add_app_launcher_args(parser)
 args_cli, hydra_args = parser.parse_known_args()
@@ -91,13 +91,13 @@ def latest_run_dir(experiment: str) -> str | None:
 
 
 def evaluate(env, runner, policy, steps: int) -> tuple[float, float]:
-    """고정 스텝 굴리며 매 스텝 속도추종을 직접 계산한다. (평균, 생존율) 반환.
+    """Roll out for a fixed number of steps, computing velocity tracking directly at every step. Returns (mean, survival rate).
 
-    ``extras["log"]["Episode_Reward/..."]`` 를 읽으면 안 된다 — 그 값은 **에피소드가 끝날 때만**
-    실린다. 평가 구간(수백 스텝)보다 에피소드(1000 스텝)가 길어서, 실제로 집계되는 것은
-    **일찍 끝난 = 넘어진 에피소드뿐**이라 성능이 심하게 과소평가된다.
+    Do not read ``extras["log"]["Episode_Reward/..."]`` — that value is only populated **when an episode ends**.
+    Episodes (1000 steps) are longer than the evaluation window (a few hundred steps), so the only episodes actually
+    aggregated are **the ones that ended early = fell over**, which severely underestimates performance.
 
-    대신 보상 정의를 그대로 재현한다 (velocity_env_cfg 의 track_lin_vel_xy_exp):
+    Instead, reproduce the reward definition exactly (track_lin_vel_xy_exp in velocity_env_cfg):
 
         exp(-||v_cmd_xy - v_xy||^2 / 0.25)   in [0, 1]
     """
@@ -138,11 +138,11 @@ def main() -> int:
             exp = exp_pat.format(t=T)
             run_dir = latest_run_dir(exp)
             if run_dir is None:
-                print(f"[warn] {terrain}/{name}: run 없음 ({exp}) — 건너뜀")
+                print(f"[warn] {terrain}/{name}: no run ({exp}) — skipping")
                 continue
             ckpts = sorted(glob.glob(os.path.join(run_dir, "model_*.pt")), key=ckpt_iter)
             if not ckpts:
-                print(f"[warn] {terrain}/{name}: 체크포인트 없음 — 건너뜀")
+                print(f"[warn] {terrain}/{name}: no checkpoints — skipping")
                 continue
 
             env_cfg = parse_env_cfg(task, device=args_cli.device, num_envs=args_cli.num_envs)
@@ -153,7 +153,7 @@ def main() -> int:
             agent_cfg = handle_deprecated_rsl_rl_cfg(agent_cfg, md.version("rsl-rl-lib"))
             agent_dict = agent_cfg.to_dict()
 
-            print(f"\n=== {terrain}/{name} — 체크포인트 {len(ckpts)}개 ===")
+            print(f"\n=== {terrain}/{name} — {len(ckpts)} checkpoints ===")
             env = gym.make(task, cfg=env_cfg, render_mode=None)
             env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
             cls = OnPolicyRunnerWaq if agent_dict.get("class_name") == "OnPolicyRunnerWaq" else OnPolicyRunner
@@ -173,7 +173,7 @@ def main() -> int:
             env.close()
 
     if not rows:
-        print("\n평가할 run 이 없다.")
+        print("\nNo runs to evaluate.")
         return 1
 
     os.makedirs(os.path.dirname(args_cli.out) or ".", exist_ok=True)
@@ -183,8 +183,8 @@ def main() -> int:
         w.writerows(rows)
     print(f"\n[ok] {args_cli.out}")
 
-    print("\n=== best policy (체크포인트별 평가 중 최고) ===")
-    print(f"{'terrain':8} {'variant':8} {'best ckpt':>16} {'underlying':>11}   {'최종 ckpt':>16} {'underlying':>11}")
+    print("\n=== best policy (best among per-checkpoint evaluations) ===")
+    print(f"{'terrain':8} {'variant':8} {'best ckpt':>16} {'underlying':>11}   {'final ckpt':>16} {'underlying':>11}")
     best: dict[tuple[str, str], dict] = {}
     for r in rows:
         k = (r["terrain"], r["variant"])
@@ -199,7 +199,7 @@ def main() -> int:
     for terrain in terrains:
         got = {n: best[(terrain, n)]["underlying"] for n in variants if (terrain, n) in best}
         if len(got) == 3:
-            print(f"\n[{terrain}] best 기준  Waq-Base = {got['Waq'] - got['Base']:+.4f}, "
+            print(f"\n[{terrain}] by best:  Waq-Base = {got['Waq'] - got['Base']:+.4f}, "
                   f"Oracle-Waq = {got['Oracle'] - got['Waq']:+.4f}")
     return 0
 

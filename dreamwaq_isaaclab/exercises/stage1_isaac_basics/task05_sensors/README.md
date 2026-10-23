@@ -1,78 +1,78 @@
-# task05 — 센서: 접촉과 height scan  `L2 · BUILD`
+# task05 — Sensors: contact and height scan  `L2 · BUILD`
 
-**Stage 1 의 마지막이자 가장 중요한 실습이다.** 여기서 읽는 두 값이
-Stage 2 에서 만들 종료 조건과 특권 관측의 원재료다.
+**The last and most important exercise of Stage 1.** The two values read here are
+the raw material for the termination condition and privileged observation you'll build in Stage 2.
 
 ```
-ContactSensor  →  몸통이 지면에 닿았는가        →  종료 조건
-RayCaster      →  로봇 주변 지형의 높이 187개   →  Oracle 의 특권 관측
+ContactSensor  →  is the base touching the ground?        →  termination condition
+RayCaster      →  187 terrain heights around the robot    →  Oracle's privileged observation
 ```
 
-## 채울 곳
+## What to fill in
 
-`starter.py` 의 `TODO(height-scan)` — 한 줄이지만 **의미를 이해해야 맞다.**
+`TODO(height-scan)` in `starter.py` — one line, but **you have to understand its meaning to get it right.**
 
-`ray_hits_w[..., 2]` 는 광선이 맞은 지점의 **월드 좌표 z** 다. 이걸 그대로 관측에
-넣으면 로봇이 언덕 위에 있을 때와 계곡에 있을 때 같은 지형이 전혀 다른 숫자가 된다.
+`ray_hits_w[..., 2]` is the **world-frame z** of the ray hit points. If you put this straight into the observation,
+the same terrain becomes completely different numbers depending on whether the robot is on a hill or in a valley.
 
-관측은 **"내 몸통이 발밑 지형보다 얼마나 높은가"** 를 알려주어야 한다.
+The observation must tell **"how much higher my base is than the terrain under my feet"**.
 
 ```
 height_scan = base_z - hit_z - BASE_HEIGHT_TARGET
 ```
 
-- `base_z` 는 `(num_envs,)`, `hit_z` 는 `(num_envs, num_rays)` — 브로드캐스트를 맞춘다
-- `BASE_HEIGHT_TARGET = 0.30` 을 빼므로 **목표 높이로 서 있으면 결과가 0** 이다
-- 이것이 프로젝트의 `mdp.height_scan` 이 하는 일이다
+- `base_z` is `(num_envs,)`, `hit_z` is `(num_envs, num_rays)` — get the broadcasting right
+- Since `BASE_HEIGHT_TARGET = 0.30` is subtracted, **the result is 0 when standing at the target height**
+- This is what the project's `mdp.height_scan` does
 
-## 실행
+## Run
 
 ```bash
 python starter.py
 python solution.py --viz kit
 ```
 
-## 통과 기준
+## Pass criteria
 
-1. 광선 187개 (`17 x 11`)
-2. 발 4개가 지면을 딛고 있다 (접촉력 합 > 1 N)
-3. 몸통은 지면에 안 닿았다 (< 1 N)
-4. 평지에서 맞은 지점 z 가 모두 0 근처
-5. 상대 높이 = 몸통높이 − 지형높이 − 0.30
+1. 187 rays (`17 x 11`)
+2. The 4 feet are on the ground (contact force sum > 1 N)
+3. The base isn't touching the ground (< 1 N)
+4. On flat ground every hit point z is near 0
+5. Relative height = base height − terrain height − 0.30
 
-## 실행하면 나오는 것
+## What you get when you run it
 
 ```
-base 접촉력       0.00 N   ← 종료 조건이 이 값을 본다 (> 1 N 이면 종료)
-FL_foot 접촉력   39.46 N
-FR_foot 접촉력   42.25 N
-RL_foot 접촉력   33.85 N
-RR_foot 접촉력   32.47 N       합 148 N ≈ Go2 무게 15 kg × 9.81
+base contact force    0.00 N   ← the termination condition looks at this value (terminates if > 1 N)
+FL_foot contact force 39.46 N
+FR_foot contact force 42.25 N
+RL_foot contact force 33.85 N
+RR_foot contact force 32.47 N       sum 148 N ≈ Go2 weight 15 kg × 9.81
 ```
 
-접촉력 합이 로봇 무게와 맞아떨어진다. 물리가 제대로 돌고 있다는 뜻이다.
+The contact force sum matches the robot's weight. That means the physics is running correctly.
 
-## 왜 187인가
+## Why 187
 
-`0.1 m` 간격, `1.6 x 1.0 m` 격자 → `17 x 11 = 187`.
+`0.1 m` spacing, `1.6 x 1.0 m` grid → `17 x 11 = 187`.
 
-이 187차원이 **Oracle 만 받는 특권 정보**다.
+These 187 dims are **privileged information that only Oracle receives**.
 
-| 모델 | actor 관측 | height scan |
+| Model | actor observation | height scan |
 |---|---:|---|
 | Base | 45 | ✗ |
-| Oracle | 48 | ✗ (critic 만 235차원으로 받는다) |
-| Waq | 64 | ✗ — **CENet 이 과거 관측만으로 추정한다** |
+| Oracle | 48 | ✗ (only the critic receives it, as 235 dims) |
+| Waq | 64 | ✗ — **CENet estimates it from past observations only** |
 
-DreamWaQ 의 핵심 주장이 여기 있다. actor 는 셋 다 height scan 을 직접 못 본다.
-Waq 는 그 대신 과거 관측 이력에서 지형 맥락을 **상상해낸다**. 그게 Stage 4다.
+DreamWaQ's core claim is right here. None of the three actors can see the height scan directly.
+Instead, Waq **imagines** the terrain context from its past observation history. That's Stage 4.
 
-## 주의: 접촉 센서는 바디 순서가 다르다
+## Caution: the contact sensor has a different body order
 
-`ContactSensor` 의 바디 인덱스는 `Articulation` 의 것과 **다르다.** 섞어 쓰면
-엉뚱한 바디를 읽는다 (이 프로젝트에서 실제로 났던 버그다).
+The `ContactSensor`'s body indices are **different** from the `Articulation`'s. If you mix them up
+you read the wrong body (this is a bug that actually happened in this project).
 
 ```python
-feet_idx, _ = contact.find_sensors(".*foot")   # 접촉 센서용
-feet_ids, _ = robot.find_bodies(".*foot")      # articulation 용 — 다른 값일 수 있다
+feet_idx, _ = contact.find_sensors(".*foot")   # for the contact sensor
+feet_ids, _ = robot.find_bodies(".*foot")      # for the articulation — may be different values
 ```

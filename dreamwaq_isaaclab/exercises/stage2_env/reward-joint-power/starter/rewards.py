@@ -20,12 +20,12 @@ if TYPE_CHECKING:
 def joint_power_l1(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
     """Penalize joint power consumption: sum(|torque| * |velocity|)."""
     # ── TODO(reward-joint-power) ─ level L1 ─────────────────────────────
-    # 관절 파워 소비 페널티를 완성한다: sum(|토크| x |각속도|)
-    #   hint: 토크는 asset.data.applied_torque, 각속도는 asset.data.joint_vel 이다
-    #   hint: 둘 다 절댓값을 취한다 — 파워를 '소비량'으로 보므로 부호는 중요하지 않다
-    #   hint: asset_cfg.joint_ids 로 대상 관절을 골라야 한다
-    #   hint: 12개 관절을 dim=1 로 합해 env 당 스칼라 하나를 만든다
-    # 통과 기준은 이 실습 폴더의 README.md 를 본다.
+    # Complete the joint power consumption penalty: sum(|torque| x |angular velocity|)
+    #   hint: Torque is asset.data.applied_torque, angular velocity is asset.data.joint_vel
+    #   hint: Take the absolute value of both — power is treated as 'consumption', so the sign doesn't matter
+    #   hint: You must select the target joints with asset_cfg.joint_ids
+    #   hint: Sum the 12 joints with dim=1 to get one scalar per env
+    # For the pass criteria, see README.md in this exercise folder.
     raise NotImplementedError("TODO(reward-joint-power)")
     # ─────────────────────────────────────────────────────────────────────
 

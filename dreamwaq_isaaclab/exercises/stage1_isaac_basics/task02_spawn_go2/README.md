@@ -1,52 +1,52 @@
-# task02 — Go2 스폰하고 상태 읽기  `L1 · FILL`
+# task02 — Spawn Go2 and read its state  `L1 · FILL`
 
-## 목표
+## Goal
 
-로봇을 씬에 올리고 그 상태를 읽는다. **Stage 2에서 만들 관측 45차원은
-전부 여기서 읽는 값들의 조합이다.**
+Put a robot into the scene and read its state. **The 45-dim observation you'll build in Stage 2
+is entirely a combination of the values read here.**
 
-## 채울 곳
+## What to fill in
 
-`starter.py` 의 `TODO(spawn-go2)` — 3~4줄이다.
+`TODO(spawn-go2)` in `starter.py` — 3–4 lines.
 
-`UNITREE_GO2_CFG` 를 복사해 다음을 지정하고 `Articulation` 을 만든다.
+Copy `UNITREE_GO2_CFG`, set the following, and create an `Articulation`.
 
-| 항목 | 값 |
+| Item | Value |
 |---|---|
 | `prim_path` | `"/World/Robot"` |
 | `init_state.pos` | `(0.0, 0.0, SPAWN_HEIGHT)` |
 
-`SPAWN_HEIGHT = 0.42` 는 이 프로젝트가 쓰는 값이다. 논문은 0.34 m 지만,
-생성 지형의 `boxes`(최대 0.1 m)를 xy ±0.5 m 리셋 랜덤화와 함께 넘기려면 더 높아야 한다.
+`SPAWN_HEIGHT = 0.42` is the value this project uses. The paper uses 0.34 m, but
+to clear the generated terrain's `boxes` (up to 0.1 m) together with the xy ±0.5 m reset randomization, it needs to be higher.
 
-> `.copy()` 를 빼먹지 않는다. `UNITREE_GO2_CFG` 는 모듈 전역 객체라 직접 고치면
-> 같은 프로세스의 다른 코드가 영향을 받는다.
+> Don't forget `.copy()`. `UNITREE_GO2_CFG` is a module-global object, so modifying it directly
+> affects other code in the same process.
 
-## 실행
+## Run
 
 ```bash
-python starter.py              # 내 코드
-python solution.py             # 정답
-python solution.py --viz kit   # GUI 로 주저앉는 모습 보기
+python starter.py              # my code
+python solution.py             # the answer
+python solution.py --viz kit   # watch it sink in the GUI
 ```
 
-## 통과 기준
+## Pass criteria
 
-1. 관절 12개 (다리 4 × hip/thigh/calf)
-2. `base` 바디 존재 — **종료 조건이 이 바디의 접촉을 본다**
-3. 발 4개 (`*_foot`) — foot clearance 보상이 이 바디들을 쓴다
-4. 최종 높이가 지면 위 (지면 아래로 꺼지지 않았다)
-5. `projected_gravity_b[2]` 가 `[-1.05, 0.05]` 범위
+1. 12 joints (4 legs × hip/thigh/calf)
+2. A `base` body exists — **the termination condition looks at this body's contact**
+3. 4 feet (`*_foot`) — the foot clearance reward uses these bodies
+4. The final height is above the ground (it didn't sink below the ground)
+5. `projected_gravity_b[2]` is in the range `[-1.05, 0.05]`
 
-## 읽고 넘어갈 것
+## Read and move on
 
-출력에 찍히는 값들이 곧 관측의 재료다.
+The values printed in the output are the ingredients of the observation.
 
-| 값 | 의미 | 관측에서 |
+| Value | Meaning | In the observation |
 |---|---|---|
-| `root_lin_vel_b` | 몸통 기준 선속도 | **Oracle 만** 직접 받는다. Base/Waq 는 못 본다 |
-| `projected_gravity_b` | 몸통 기준 중력 방향 | 3차원. 자세를 알려준다 |
-| `joint_pos` / `joint_vel` | 관절 각도 / 각속도 | 12 + 12 = 24차원 |
+| `root_lin_vel_b` | Body-frame linear velocity | Received directly by **Oracle only**. Base/Waq can't see it |
+| `projected_gravity_b` | Body-frame gravity direction | 3 dims. Tells the orientation |
+| `joint_pos` / `joint_vel` | Joint angles / angular velocities | 12 + 12 = 24 dims |
 
-**액션을 한 번도 주지 않으면 로봇은 주저앉는다.** 당연한 결과지만 중요하다 —
-서 있는 것조차 매 스텝 관절 목표를 주어야 가능하다. 그게 task03이다.
+**If no action is ever given, the robot sinks.** Obvious, but important —
+even just standing requires giving joint targets at every step. That's task03.

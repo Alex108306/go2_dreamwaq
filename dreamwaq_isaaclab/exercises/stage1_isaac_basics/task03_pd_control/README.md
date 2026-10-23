@@ -1,59 +1,59 @@
-# task03 — PD 제어와 액션 스케일  `L1 · FILL`
+# task03 — PD control and action scale  `L1 · FILL`
 
-## 목표
+## Goal
 
-정책의 액션이 관절 목표로 어떻게 바뀌는지, 그리고 **PD 게인이 무엇을 결정하는지**
-로봇 두 대를 나란히 세워 눈으로 확인한다.
+See how the policy's action turns into a joint target, and **what the PD gains determine**,
+by standing two robots side by side.
 
-## 핵심 식
+## Key formula
 
 ```
 joint_target = default_joint_pos + action * 0.25
                └─ use_default_offset=True        └─ scale=0.25
 ```
 
-정책은 "이 관절을 몇 rad 로"가 아니라 **"기본 자세에서 얼마나 벗어날지"**를 낸다.
-액션이 ±1로 클립되므로 관절 목표는 기본 자세 **±0.25 rad** 안에 갇힌다.
+The policy outputs **"how far to deviate from the default pose"**, not "put this joint at X rad".
+Since the action is clipped to ±1, the joint target is confined to within **±0.25 rad** of the default pose.
 
-## 채울 곳
+## What to fill in
 
-`starter.py` 의 `TODO(pd-target)` — `action_to_target()` 한 줄이다.
+`TODO(pd-target)` in `starter.py` — one line in `action_to_target()`.
 
-## 실행
+## Run
 
 ```bash
 python starter.py
-python solution.py --viz kit   # 두 대가 나란히 선 모습
+python solution.py --viz kit   # the two standing side by side
 ```
 
-## 통과 기준
+## Pass criteria
 
-1. `action=+1` → 관절 목표가 기본 자세에서 정확히 `0.25 rad` 벗어남
-2. `action=0` → 목표 = 기본 자세
-3. `Kp↑` → 관절 추종 오차 ↓
-4. `Kp↑` → 몸통 높이 ↑
+1. `action=+1` → the joint target deviates from the default pose by exactly `0.25 rad`
+2. `action=0` → target = default pose
+3. `Kp↑` → joint tracking error ↓
+4. `Kp↑` → base height ↑
 
-## 실행하면 나오는 것
+## What you get when you run it
 
-| | Kp | 높이 | 관절 추종 오차 |
+| | Kp | Height | Joint tracking error |
 |---|---:|---:|---:|
-| Soft (프로젝트 값) | 20 | 0.232 m | **0.604 rad** |
-| Stiff (대조군) | 80 | 0.309 m | 0.068 rad |
+| Soft (project value) | 20 | 0.232 m | **0.604 rad** |
+| Stiff (control group) | 80 | 0.309 m | 0.068 rad |
 
-**둘 다 `action=0`, 즉 "기본 자세를 유지하라"는 같은 명령을 받았다.**
+**Both received the same command, `action=0`, i.e. "hold the default pose".**
 
-## 이게 왜 중요한가
+## Why this matters
 
-`Kp=20` 은 자기 무게조차 다 버티지 못해 0.6 rad 처진다. 그런데 이 프로젝트는
-그 무른 게인을 **일부러** 쓴다 (`go2_base_cfg.py` 가 IsaacLab 기본 25.0 을 20.0 으로 덮어쓴다).
+`Kp=20` can't even fully support its own weight and sags by 0.6 rad. Yet this project
+uses those soft gains **on purpose** (`go2_base_cfg.py` overrides IsaacLab's default 25.0 with 20.0).
 
-- 실제 Go2 의 관절이 그 정도다. sim 에서만 뻣뻣하게 만들면 실기 이전 시 그만큼 어긋난다
-- 부족한 만큼은 **정책이 매 스텝 액션으로 메우도록** 학습된다
+- The real Go2's joints are about that soft. Making them stiff only in sim makes it diverge that much more when transferred to hardware
+- The policy learns **to make up the shortfall with its action at every step**
 
-Stiff 쪽 높이 `0.309 m` 가 DreamWaQ 의 `base_height_target = 0.30` 과 거의 같은 것도
-우연이 아니다 — 기본 자세는 목표 높이에 서도록 잡혀 있다.
+It's also no coincidence that the Stiff height `0.309 m` is almost the same as DreamWaQ's `base_height_target = 0.30`
+— the default pose is set up to stand at the target height.
 
-## 직접 해 보기 (선택)
+## Try it yourself (optional)
 
-`ACTION_SCALE` 을 `1.0` 으로 올리고 GUI 로 본다. 관절 목표가 ±1 rad 까지 튀면서
-로봇이 어떻게 되는가? 이 프로젝트가 `scale=0.25` 를 쓰는 이유가 보인다.
+Raise `ACTION_SCALE` to `1.0` and watch in the GUI. With joint targets jumping up to ±1 rad,
+what happens to the robot? You'll see why this project uses `scale=0.25`.

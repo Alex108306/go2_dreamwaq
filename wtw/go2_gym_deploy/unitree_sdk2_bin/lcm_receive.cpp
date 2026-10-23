@@ -16,7 +16,7 @@ class Handler1
                 const std::string& chan, 
                 const leg_control_data_lcmt* leg_control_lcm_data)
         {
-            int tab_space = 15; // 表格间隙
+            int tab_space = 15; // Table column spacing
             std::cout << "**************** msgs name : leg_control_lcm_data ****************" << std::endl;
             std::cout << std::left << std::setw(tab_space) << "Motor id" << std::setw(tab_space) << "angle" << std::setw(tab_space) << "velocity"<< std::setw(tab_space) << "torque" << std::endl;
             for (int i = 0; i < 12; i++){

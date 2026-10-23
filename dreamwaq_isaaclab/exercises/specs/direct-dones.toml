@@ -2,18 +2,18 @@ id = "direct-dones"
 level = 2
 stage = "stage2_env"
 source = "dreamwaq_direct/source/dreamwaq_direct/dreamwaq_direct/tasks/locomotion/dreamwaq_env.py"
-task = "종료 조건 두 가지를 만든다 — 시간 초과와 몸통 접촉"
+task = "Build the two termination conditions — timeout and base contact"
 hints = [
-    "time_out 은 episode_length_buf 가 max_episode_length - 1 이상인 env 다 (스텝 인덱스는 0부터 센다)",
-    "net_forces_w_history 는 (envs, history=3, bodies, 3) 이다. .torch 로 텐서를 얻는다",
-    "self._termination_contact_ids 로 몸통(base) 바디만 골라낸다",
-    "축을 순서대로 줄인다: 힘 벡터 norm(dim=-1) → history 최대값 max(dim=1)[0] → 임계값 비교 → 바디 any(dim=1)",
-    "history 는 평균이 아니라 최대를 쓴다. 3 프레임 중 한 번이라도 부딪혔으면 넘어진 것이다",
-    "임계값은 self.cfg.termination_contact_force (1.0 N) 다 — 원본 legged_gym 과 같다",
+    "time_out is the envs whose episode_length_buf is >= max_episode_length - 1 (step indices count from 0)",
+    "net_forces_w_history is (envs, history=3, bodies, 3). Get the tensor with .torch",
+    "Pick out only the base body with self._termination_contact_ids",
+    "Reduce the axes in order: force-vector norm(dim=-1) → history max max(dim=1)[0] → threshold comparison → bodies any(dim=1)",
+    "Use the max over history, not the mean. If it hit even once in the 3 frames, it fell",
+    "The threshold is self.cfg.termination_contact_force (1.0 N) — same as the original legged_gym",
 ]
 
-# 원본에서 그대로 잘라낼 구간. 소스가 바뀌면 생성기가 "찾지 못했다"고 실패하므로
-# 조용히 어긋나는 일은 없다. 그때는 이 body 를 현재 코드로 갱신한다.
+# The section to cut out verbatim from the original. If the source changes, the generator fails with "not found",
+# so it never silently drifts. When that happens, update this body to the current code.
 body = """        time_out = self.episode_length_buf >= self.max_episode_length - 1
 
         # Failure termination: trunk touches the terrain.

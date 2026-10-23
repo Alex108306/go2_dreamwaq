@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""빠른 검증 — reward-smoothness.
+"""Fast check — reward-smoothness.
 
-Isaac Sim 없이 돈다. `env` 는 action_manager 만 갖는 최소 스텁으로 대체한다.
+Runs without Isaac Sim. `env` is replaced with a minimal stub that only has action_manager.
 
-    python check.py                 # starter/rewards.py 를 검사
-    python check.py --solution      # 완성본을 검사
+    python check.py                 # check starter/rewards.py
+    python check.py --solution      # check the finished version
 """
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ class FakeActionManager:
 
 
 class FakeEnv:
-    """rewards.py 가 실제로 건드리는 최소한만 흉내낸다."""
+    """Mimics only the bare minimum that rewards.py actually touches."""
 
     def __init__(self, num_envs: int = NUM_ENVS, num_actions: int = NUM_ACTIONS):
         self.num_envs = num_envs
@@ -43,7 +43,7 @@ class FakeEnv:
         self.action_manager = FakeActionManager(num_envs, num_actions)
 
     def step(self, new_action: torch.Tensor) -> None:
-        """한 스텝 진행: t-1 ← t, t ← new_action."""
+        """Advance one step: t-1 ← t, t ← new_action."""
         am = self.action_manager
         am.prev_action = am.action.clone()
         am.action = new_action.clone()
@@ -55,7 +55,7 @@ def main() -> int:
     args = ap.parse_args()
 
     path = SOLUTION if args.solution else STARTER
-    print(f"검사 대상: {path.relative_to(REPO_ROOT)}\n")
+    print(f"Checking: {path.relative_to(REPO_ROOT)}\n")
     mod = load_module(path)
 
     failures: list[str] = []
@@ -72,39 +72,39 @@ def main() -> int:
         term.prev_prev_action = torch.zeros(NUM_ENVS, NUM_ACTIONS)
         return env, term
 
-    # --- 1. 액션이 계속 0 이면 저크도 0 --------------------------------------
+    # --- 1. If the action stays 0, the jerk is 0 too --------------------------------------
     env, term = fresh()
     try:
         r = term(env)
     except NotImplementedError:
-        print("  아직 TODO(reward-smoothness) 가 비어 있다. starter/rewards.py 를 채운다.")
+        print("  TODO(reward-smoothness) is still empty. Fill in starter/rewards.py.")
         return 1
-    check("1. 반환이 (num_envs,) 스칼라 벡터", tuple(r.shape) == (NUM_ENVS,), f"shape={tuple(r.shape)}")
-    check("2. 액션이 0 이면 저크 0", torch.allclose(r, torch.zeros(NUM_ENVS)), f"{r.tolist()[:3]}")
+    check("1. returns a (num_envs,) scalar vector", tuple(r.shape) == (NUM_ENVS,), f"shape={tuple(r.shape)}")
+    check("2. jerk 0 if the action is 0", torch.allclose(r, torch.zeros(NUM_ENVS)), f"{r.tolist()[:3]}")
 
-    # --- 3. 등속 변화(선형 램프)면 저크가 0 -----------------------------------
-    # a_t = t*c 이면 2차 차분은 정확히 0 이다. "부드러운 움직임은 벌하지 않는다".
+    # --- 3. Constant-rate change (linear ramp) gives zero jerk -----------------------------------
+    # If a_t = t*c, the second-order difference is exactly 0. "Smooth motion isn't penalized".
     env, term = fresh()
     c = torch.full((NUM_ENVS, NUM_ACTIONS), 0.3)
     for t in range(1, 5):
         env.step(c * t)
         r = term(env)
-    check("3. 선형 램프(등속 변화)면 저크 0", torch.allclose(r, torch.zeros(NUM_ENVS), atol=1e-6),
+    check("3. jerk 0 for a linear ramp (constant-rate change)", torch.allclose(r, torch.zeros(NUM_ENVS), atol=1e-6),
           f"{r[0].item():.6f}")
 
-    # --- 4. 알려진 수열로 값이 정확한가 ---------------------------------------
+    # --- 4. Is the value exact on a known sequence ---------------------------------------
     # a = 0, 0, 1 → jerk = 1 - 2*0 + 0 = 1 → sum over 12 joints of 1^2 = 12
     env, term = fresh()
     env.step(torch.zeros(NUM_ENVS, NUM_ACTIONS))  # t-1 ← 0, t ← 0
     term(env)  # prev_prev ← 0
     env.step(torch.ones(NUM_ENVS, NUM_ACTIONS))  # t-1 ← 0, t ← 1
     r = term(env)
-    check("4. a=(0,0,1) → 저크^2 합 = 12", torch.allclose(r, torch.full((NUM_ENVS,), 12.0)),
-          f"{r[0].item():.4f} (기대 12.0)")
+    check("4. a=(0,0,1) → sum of jerk^2 = 12", torch.allclose(r, torch.full((NUM_ENVS,), 12.0)),
+          f"{r[0].item():.4f} (expected 12.0)")
 
-    # --- 5. t-2 버퍼가 실제로 갱신되는가 --------------------------------------
-    # 갱신을 빠뜨리면 prev_prev 가 계속 0 이라 아래 값이 달라진다.
-    # a = 0, 1, 2 → jerk = 2 - 2*1 + 0 = 0  (선형이므로 0)
+    # --- 5. Is the t-2 buffer actually updated --------------------------------------
+    # If the update is forgotten, prev_prev stays 0 and the value below changes.
+    # a = 0, 1, 2 → jerk = 2 - 2*1 + 0 = 0  (0 since it's linear)
     env, term = fresh()
     env.step(torch.zeros(NUM_ENVS, NUM_ACTIONS))
     term(env)
@@ -112,32 +112,32 @@ def main() -> int:
     term(env)
     env.step(torch.full((NUM_ENVS, NUM_ACTIONS), 2.0))
     r = term(env)
-    check("5. t-2 버퍼 갱신됨 (a=0,1,2 → 저크 0)", torch.allclose(r, torch.zeros(NUM_ENVS), atol=1e-6),
-          f"{r[0].item():.4f} — 버퍼를 갱신하지 않으면 48 이 나온다")
+    check("5. t-2 buffer updated (a=0,1,2 → jerk 0)", torch.allclose(r, torch.zeros(NUM_ENVS), atol=1e-6),
+          f"{r[0].item():.4f} — without updating the buffer you get 48")
 
-    # --- 6. 별칭(aliasing) 없이 clone 했는가 ----------------------------------
+    # --- 6. Was it cloned without aliasing ----------------------------------
     env, term = fresh()
     env.step(torch.ones(NUM_ENVS, NUM_ACTIONS))
     term(env)
     before = term.prev_prev_action.clone()
-    env.action_manager.prev_action.mul_(99.0)  # 원본을 흔들어 본다
-    check("6. prev_prev_action 이 별칭이 아니다 (clone 됨)",
+    env.action_manager.prev_action.mul_(99.0)  # shake the original
+    check("6. prev_prev_action is not an alias (cloned)",
           torch.allclose(term.prev_prev_action, before),
-          "prev_action 을 바꿨더니 prev_prev_action 도 같이 바뀌었다 — .clone() 이 빠졌다")
+          "changing prev_action also changed prev_prev_action — .clone() is missing")
 
-    # --- 7. reset 이 버퍼를 비우는가 ------------------------------------------
+    # --- 7. Does reset clear the buffer ------------------------------------------
     env, term = fresh()
     env.step(torch.ones(NUM_ENVS, NUM_ACTIONS))
     term(env)
     term.reset(env_ids=None)
-    check("7. reset() 이 t-2 버퍼를 0 으로 되돌린다",
+    check("7. reset() resets the t-2 buffer to 0",
           torch.allclose(term.prev_prev_action, torch.zeros(NUM_ENVS, NUM_ACTIONS)))
 
     print()
     if failures:
-        print(f"\033[1;31m{len(failures)}개 실패\033[0m: {', '.join(failures)}")
+        print(f"\033[1;31m{len(failures)} failed\033[0m: {', '.join(failures)}")
         return 1
-    print("\033[1;32m전부 통과.\033[0m 이어서 reward-foot-clearance 로 간다.")
+    print("\033[1;32mAll passed.\033[0m Continue with reward-foot-clearance.")
     return 0
 
 

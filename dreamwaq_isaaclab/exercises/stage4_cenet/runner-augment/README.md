@@ -1,130 +1,130 @@
-# runner-augment — actor 관측 45 → 64  `L2 · BUILD`
+# runner-augment — actor observation 45 → 64  `L2 · BUILD`
 
 **Stage 4 · CENet (VAE)**
 
-## 목표
+## Goal
 
-CENet 이 만든 값을 **actor 입력에 실제로 꽂는다.** 이 한 줄짜리 결합이 Base 와 Waq 를 가른다.
-
-```
-Base   : actor 관측 45                                   ← 지형도 속도도 모른다
-Oracle : actor 관측 48 = 45 + 실제 base_lin_vel(3)        ← 특권 정보를 그냥 받는다 (상한)
-Waq    : actor 관측 64 = 45 + est_vel(3) + context(16)   ← CENet 이 추정한다
-```
-
-`Waq − Base` 가 **CENet 의 순수 기여**, `Oracle − Waq` 가 **남은 격차**다.
-Stage 5 에서 이 두 값을 실제 학습 곡선으로 확인한다.
-
-## 채울 곳
+**Actually plug** the values CENet produces **into the actor input.** This one-line concatenation separates Base from Waq.
 
 ```
-starter/dreamwaq_runner.py  →  OnPolicyRunnerWaq._build_actor_obs()  안의  TODO(runner-augment)
+Base   : actor observation 45                                     ← knows neither terrain nor velocity
+Oracle : actor observation 48 = 45 + actual base_lin_vel(3)       ← just receives privileged info (upper bound)
+Waq    : actor observation 64 = 45 + est_vel(3) + context(16)     ← CENet estimates it
 ```
 
-이 메서드는 rollout 루프에서 매 스텝 불린다 (`learn()` 안, `self.alg.act()` 직전).
+`Waq − Base` is **the pure contribution of CENet**, and `Oracle − Waq` is **the remaining gap**.
+In Stage 5 you'll check these two values on actual training curves.
 
-이미 주어진 것:
+## What to fill in
+
+```
+starter/dreamwaq_runner.py  →  TODO(runner-augment)  inside  OnPolicyRunnerWaq._build_actor_obs()
+```
+
+This method is called every step in the rollout loop (inside `learn()`, right before `self.alg.act()`).
+
+Already given:
 
 | | |
 |---|---|
-| `self.obs_rms` | base 관측(45) 용 **running mean/std 정규화기** (`rsl_rl.modules.EmpiricalNormalization`). 러너가 rollout 중 매 스텝 raw 관측으로 통계를 갱신한다 |
-| `self.true_vel_rms` | 같은 종류의 정규화기지만 **실제 base linear velocity(3) 전용**. CENet 의 속도 타깃을 정규화하는 데 쓴다 |
-| `self._norm_base(base_obs)` | base 관측(45)을 `obs_rms` 로 정규화 |
-| `self._extract_extero(src_obs)` | `src_obs` 에서 height_scan 부분만 떼어냄 |
-| `self.use_exteroception` | rough 면 `True`, flat 이면 `False` |
+| `self.obs_rms` | **running mean/std normalizer** for the base observation (45) (`rsl_rl.modules.EmpiricalNormalization`). The runner updates its statistics with raw observations every step during rollout |
+| `self.true_vel_rms` | The same kind of normalizer but **dedicated to the actual base linear velocity (3)**. Used to normalize CENet's velocity target |
+| `self._norm_base(base_obs)` | Normalizes the base observation (45) with `obs_rms` |
+| `self._extract_extero(src_obs)` | Detaches only the height_scan part from `src_obs` |
+| `self.use_exteroception` | `True` for rough, `False` for flat |
 
-## 정규화를 어디에만 거는가
+## Where normalization is applied
 
-**base 관측 45 에만** 건다. `vel_input` 과 `context_vec` 은 정규화하지 않고 그대로 잇는다.
+It is applied **only to the 45 base observations**. `vel_input` and `context_vec` are concatenated as-is without normalization.
 
-이유: `est_vel` 은 이미 `true_vel_rms` 로 정규화된 공간에서 학습된 값이고,
-`context_vec` 은 KL 규제 덕에 대략 표준정규 근처에 머문다. 둘 다 이미 스케일이 맞는다.
-여기에 `obs_rms`(45 차원용 통계)를 또 먹이면 차원 수부터 맞지 않는다.
+Reason: `est_vel` is already learned in the space normalized by `true_vel_rms`,
+and `context_vec` stays roughly near the standard normal thanks to the KL regularization. Both are already at the right scale.
+Feeding them through `obs_rms` (statistics for 45 dims) again wouldn't even match the number of dims.
 
-## 검증
+## Checks
 
 ```bash
 cd exercises/stage4_cenet/runner-augment
-~/IsaacLab/_isaac_sim/python.sh check.py   # 빠른 검증 — Isaac Sim 불필요, 1초
+~/IsaacLab/_isaac_sim/python.sh check.py   # fast check — no Isaac Sim needed, 1 s
 ```
 
-> 검사기는 순수 torch 지만 **번들 kit python 으로 돌린다.** 시스템 `python3` 에는 torch 가 없다.
+> The checker is pure torch but **is run with the bundled kit python.** The system `python3` doesn't have torch.
 
-검사기는 `_build_actor_obs` 를 클래스에서 떼어내 **가짜 self** 로 부른다. 러너 전체를
-띄우려면 env 가 필요하지만, 이 메서드는 self 의 세 가지만 쓰기 때문에 가능하다.
+The checker detaches `_build_actor_obs` from the class and calls it with a **fake self**. Launching the whole runner
+would need an env, but it's possible because this method only uses three things from self.
 
-통과 기준 (12개):
+Pass criteria (12):
 
-1. flat 에서 `45 + 3 + 16 = 64` 차원
-2. 순서가 `[norm(base), vel, context]` 다
-   - 앞 45 는 **정규화된** base
-   - 그 다음 3 은 `vel_input` **원본 그대로**
-   - 마지막 16 은 `context_vec` **원본 그대로**
-3. rough 에서 height_scan(187) 이 **맨 뒤**에 붙어 251 차원. 앞 64 는 flat 일 때와 같다
+1. `45 + 3 + 16 = 64` dims on flat
+2. The order is `[norm(base), vel, context]`
+   - the first 45 are the **normalized** base
+   - the next 3 are `vel_input` **as-is**
+   - the last 16 are `context_vec` **as-is**
+3. On rough, height_scan (187) is appended **at the very end** for 251 dims. The first 64 are the same as on flat
 4. `NaN` → `0.0`, `+inf` → `10.0`, `-inf` → `-10.0`
-5. **유한한 큰 값은 그대로 통과한다** — `clamp` 가 아니라 `nan_to_num` 이어야 한다
+5. **Finite large values pass through unchanged** — it must be `nan_to_num`, not `clamp`
 
-## 힌트
+## Hints
 
 <details>
-<summary>1단계 — 순서가 곧 규약이다</summary>
+<summary>Step 1 — the order is the contract</summary>
 
-`torch.cat` 의 순서가 actor 의 입력 레이아웃을 정의한다. 학습 때와 배포 때가 같은 순서를
-써야 한다. 여기서 순서를 바꾸면 체크포인트가 upstream `deploy_sim2sim` 스택과 호환되지 않는다.
+The order of `torch.cat` defines the actor's input layout. Training and deployment must use the same order.
+Change the order here and the checkpoints become incompatible with the upstream `deploy_sim2sim` stack.
 
-`get_inference_policy()` 도 같은 메서드를 부르므로, 한 곳만 고치면 학습·평가·배포가 함께 따라온다.
+`get_inference_policy()` calls the same method, so fixing it in one place makes training, evaluation and deployment all follow along.
 </details>
 
 <details>
-<summary>2단계 — exteroception 은 조건부로</summary>
+<summary>Step 2 — exteroception is conditional</summary>
 
-rough 지형은 critic 이 height_scan 을 받는다. `use_exteroception` 이 `True` 면
-`self._extract_extero(src_obs)` 를 **맨 뒤에** 덧붙인다. 앞의 64 는 건드리지 않는다.
+On rough terrain the critic receives height_scan. If `use_exteroception` is `True`,
+append `self._extract_extero(src_obs)` **at the very end**. Don't touch the 64 before it.
 </details>
 
 <details>
-<summary>3단계 — 왜 nan_to_num 인가</summary>
+<summary>Step 3 — why nan_to_num</summary>
 
-CENet 이 발산하면 `est_vel` 이나 `context_vec` 에 `NaN` 이 뜬다. 그대로 actor 로 들어가면
-정책 가중치가 통째로 `NaN` 이 되어 학습이 조용히 죽는다. 몇 시간 뒤에야 알아차린다.
+If CENet diverges, `NaN` shows up in `est_vel` or `context_vec`. If that goes straight into the actor,
+the policy weights become `NaN` wholesale and training dies silently. You only notice hours later.
 
-`torch.nan_to_num(..., nan=0.0, posinf=10.0, neginf=-10.0)` 은 **비정상 값만** 바꾸고
-정상 값은 건드리지 않는다. `clamp` 를 쓰면 멀쩡한 큰 값까지 잘라 학습 신호가 왜곡된다.
+`torch.nan_to_num(..., nan=0.0, posinf=10.0, neginf=-10.0)` changes **only abnormal values** and
+leaves normal values alone. Using `clamp` cuts even healthy large values and distorts the learning signal.
 
-아래 rollout 타이밍 5번에 `clamp` 가 나오는데 모순이 아니다. **CENet 출력(`est_vel`,
-`context_vec`)은 호출자가 `_build_actor_obs` 를 부르기 *전에* 이미 ±10 으로 clamp 해 둔다.**
-`_build_actor_obs` 안으로 들어온 시점에는 이미 완성된 관측이고, 여기서 45 차원 base 관측까지
-싸잡아 자르면 정상 관측이 왜곡된다. 그래서 이 안에서는 `clamp` 가 아니라 `nan_to_num` 이다.
+`clamp` appears in step 5 of the rollout timing below, but that's not a contradiction. **The CENet outputs (`est_vel`,
+`context_vec`) are already clamped to ±10 by the caller *before* calling `_build_actor_obs`.**
+By the time they come into `_build_actor_obs` it's already a complete observation, and cutting the 45-dim base observation
+along with it here would distort normal observations. That's why inside here it's `nan_to_num`, not `clamp`.
 </details>
 
-## rollout 안에서의 호출 타이밍 (읽기)
+## Call timing within the rollout (reading)
 
-이 메서드는 `learn()` 의 rollout 루프 한가운데 있다. 순서가 중요하다.
+This method sits right in the middle of `learn()`'s rollout loop. The order matters.
 
 ```
-1. base_obs, true_vel 을 관측에서 꺼낸다
-2. obs_rms.update(base_obs)      <- 정규화 통계를 raw 값으로 먼저 갱신
-3. obs_history = 정규화된 이력
-4. cenet.before_action(...)      <- forward + rollout storage 에 (history, true_vel) 저장
-5. est_vel / context_vec 을 ±10 으로 clamp   <- CENet 출력만. 호출자가 미리 자른다
-6. _build_actor_obs(...)         <- 여기. 이미 잘린 값을 받으므로 안에서 또 clamp 하지 않는다
+1. take base_obs, true_vel out of the observation
+2. obs_rms.update(base_obs)      <- update the normalization statistics with raw values first
+3. obs_history = normalized history
+4. cenet.before_action(...)      <- forward + store (history, true_vel) in the rollout storage
+5. clamp est_vel / context_vec to ±10   <- CENet outputs only. The caller cuts them beforehand
+6. _build_actor_obs(...)         <- here. It receives already-cut values, so it doesn't clamp again inside
 7. alg.act() -> env.step()
-8. cenet.after_action(정규화된 next_obs)  <- recon 타깃 저장, storage.step += 1
+8. cenet.after_action(normalized next_obs)  <- store the recon target, storage.step += 1
 ```
 
-두 가지를 눈여겨본다.
+Pay attention to two things.
 
-- **4 와 8 이 짝이다.** `before_action` 은 `(관측 이력, 실제 속도)` 를, `after_action` 은
-  `다음 스텝 관측` 을 저장한다. env 를 밟기 전과 후로 나뉘어 있어서 한 transition 이 완성된다.
-- **8 에서 저장하는 recon 타깃은 `_norm_base(next_base_obs)` — 정규화된 값이다.**
-  인코더 입력(정규화된 이력)과 디코더 타깃의 스케일을 맞추기 위해서다.
-  여기서 raw 값을 저장하면 `recon_loss` 가 오염되어 CENet 이 제 일을 못 한다.
+- **4 and 8 are a pair.** `before_action` stores `(observation history, actual velocity)`, and `after_action` stores
+  `the next step's observation`. Split into before and after stepping the env, they complete one transition.
+- **The recon target stored in 8 is `_norm_base(next_base_obs)` — a normalized value.**
+  This matches the scale of the encoder input (normalized history) and the decoder target.
+  Storing raw values here contaminates `recon_loss` and CENet can't do its job.
 
-`cenet.update()` 는 rollout 이 끝난 뒤 PPO update 와 함께 한 번 불린다.
+`cenet.update()` is called once after the rollout ends, together with the PPO update.
 
-## 다 하고 나면
+## When you're done
 
-Stage 4 완료다. Waq task 가 실제로 돈다.
+Stage 4 is complete. The Waq task actually runs.
 
 ```bash
 cd dreamwaq_manager
@@ -132,11 +132,11 @@ python scripts/rsl_rl/train.py --task=DreamWaQ-Waq-Official-Rough-PPO-v0 \
     --headless --num_envs=64 --max_iterations=30
 ```
 
-> **왜 실습에서 보던 `DreamWaQ-Manager-Go2-Waq-v0` 가 아니라 `-Official-` 인가?**
-> repo 에는 env 레시피가 두 벌 있다. 논문 보상을 그대로 옮긴 `Manager-Go2-*` 레시피는
-> **걷지 못해서 폐기됐고**(몸통 접촉 종료 78%), 실제 실험은 Isaac Lab 공식 Go2 보상을 쓰는
-> `*-Official-*` 계열로 돌린다. CENet 코드는 양쪽이 똑같으니 여기서 고친 것이 그대로 쓰인다.
-> 자세한 대조는 [`PAPER.md`](../../../PAPER.md) §0 에 있다.
+> **Why `-Official-` and not the `DreamWaQ-Manager-Go2-Waq-v0` seen in the exercises?**
+> The repo has two env recipes. The `Manager-Go2-*` recipe, which copies the paper's rewards as-is,
+> **was abandoned because it couldn't walk** (78% base-contact terminations), and the actual experiments are run with the `*-Official-*`
+> family, which uses Isaac Lab's official Go2 rewards. The CENet code is identical on both sides, so what you fixed here is used as-is.
+> The detailed comparison is in §0 of [`PAPER.md`](../../../PAPER.md).
 
-`Learning iteration` 이 찍히고 CENet 손실 3종이 함께 나오면 성공이다.
-성능 비교는 Stage 5 에서 강사 배포 자산으로 한다.
+Success if `Learning iteration` is printed along with the 3 CENet losses.
+The performance comparison is done in Stage 5 with the instructor's distributed assets.

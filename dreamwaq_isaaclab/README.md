@@ -31,7 +31,7 @@ This makes the comparison useful for understanding the role of **privileged info
 ## Repository Structure
 
 ```text
-lec_dreamwaq/
+dreamwaq_isaaclab/
 ├── run_full_pipeline.sh          # Train all 6 experimental variants + generate videos
 │
 ├── dreamwaq_manager/             # Main implementation and source of all results
@@ -236,7 +236,7 @@ See [`setup.qmd`](setup.qmd) for the complete setup procedure.
 ## Install the package
 
 ```bash
-cd ~/Documents/lec_dreamwaq/dreamwaq_manager
+cd ~/Master_Thesis/go2_dreamwaq/dreamwaq_isaaclab/dreamwaq_manager
 
 ~/IsaacLab/_isaac_sim/python.sh \
     -m pip install -e source/dreamwaq_manager

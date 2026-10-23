@@ -14,7 +14,7 @@ in `exercises/specs/<id>.toml`, and `body` holds the exact snippet to cut out:
     level  = 2
     stage  = "stage4_cenet"
     source = "dreamwaq_manager/.../cenet.py"
-    task   = "CENet 의 세 손실 항을 완성한다"
+    task   = "Complete CENet's three loss terms"
     hints  = ["...", "..."]
     body   = '''            mse_loss = nn.MSELoss()
     ...
@@ -34,7 +34,7 @@ Three optional fields tune what the learner sees:
                                       # exercise's check.py must not need them.
     [[also_mask]]                     # mask PROSE (docstrings, comments) that gives the
     find = "Encoder: ... → 35"        # answer away. `also_blank` stubs out code; this one
-    replace = "구조는 직접 세운다"      # swaps a verbatim snippet for a neutral one.
+    replace = "Build the structure yourself"   # swaps a verbatim snippet for a neutral one.
                                       # Repeat the [[also_mask]] block per snippet.
 
 `also_blank` and `also_mask` both fail loudly when their target is missing or ambiguous —
@@ -44,7 +44,7 @@ a silent no-op would ship the answer without anyone noticing.
 ----------------------------------------------------------------------------
 Those files are lecture material to begin with, so marking them in place costs nothing:
 
-    # ex:begin id=pd-target level=1 stage=stage1_isaac_basics task=관절 목표를 계산한다
+    # ex:begin id=pd-target level=1 stage=stage1_isaac_basics task=compute the joint target
     #   hint: joint_target = default_joint_pos + action * ACTION_SCALE
     return robot.data.default_joint_pos + action * ACTION_SCALE
     # ex:end
@@ -133,9 +133,9 @@ def _todo_block(ex: Exercise, indent: str) -> str:
     shown = ex.hints if ex.inline_hints is None else ex.hints[: ex.inline_hints]
     lines += [f"{indent}#   hint: {h}" for h in shown]
     if len(shown) < len(ex.hints):
-        lines.append(f"{indent}#   나머지 힌트는 README.md 의 '힌트' 절에 접혀 있다 — 먼저 안 보고 해 본다.")
+        lines.append(f"{indent}#   The remaining hints are folded in the 'Hints' section of README.md — try without them first.")
     lines += [
-        f"{indent}# 통과 기준은 이 실습 폴더의 README.md 를 본다.",
+        f"{indent}# For the pass criteria, see README.md in this exercise folder.",
         f'{indent}raise NotImplementedError("TODO({ex.id})")',
         f"{indent}# ─────────────────────────────────────────────────────────────────────",
     ]
@@ -146,8 +146,8 @@ def _other_block(other: Exercise, indent: str) -> str:
     """Placeholder for a *different* exercise's region — no task text, no hints, no answer."""
     return "\n".join(
         [
-            f"{indent}# ── 다른 실습({other.id})의 구간이다 — 여기는 지금 채우지 않는다 ──────",
-            f'{indent}raise NotImplementedError("TODO({other.id}) — 이 실습의 범위가 아니다")',
+            f"{indent}# ── This is another exercise's ({other.id}) region — don't fill it in now ──────",
+            f'{indent}raise NotImplementedError("TODO({other.id}) — not in the scope of this exercise")',
             f"{indent}# ─────────────────────────────────────────────────────────────────────",
         ]
     )
@@ -196,13 +196,13 @@ def load_specs() -> list[Exercise]:
 def _locate(ex: Exercise, text: str, body: str, owner: str) -> str:
     if body not in text:
         raise SystemExit(
-            f"[{ex.id}] spec 의 body 를 소스에서 찾지 못했다{'' if owner == ex.id else f' (also_blank={owner})'}.\n"
+            f"[{ex.id}] could not find the spec's body in the source{'' if owner == ex.id else f' (also_blank={owner})'}.\n"
             f"  source: {ex.source.relative_to(REPO_ROOT)}\n"
-            f"  소스가 바뀌었다면 exercises/specs/{owner}.toml 의 body 를 현재 코드로 갱신한다.\n"
-            f"  찾던 첫 줄: {body.splitlines()[0] if body.splitlines() else '<empty>'!r}"
+            f"  If the source changed, update the body in exercises/specs/{owner}.toml to the current code.\n"
+            f"  first line searched for: {body.splitlines()[0] if body.splitlines() else '<empty>'!r}"
         )
     if text.count(body) > 1:
-        raise SystemExit(f"[{owner}] body 가 소스에 {text.count(body)}번 나온다 — 유일해야 한다")
+        raise SystemExit(f"[{owner}] body appears {text.count(body)} times in the source — it must be unique")
     return re.match(r"\s*", body.splitlines()[0]).group(0)
 
 
@@ -214,10 +214,10 @@ def render_from_spec(ex: Exercise, all_ex: list[Exercise]) -> str:
     for other_id in ex.also_blank:
         other = next((e for e in all_ex if e.id == other_id), None)
         if other is None or other.body is None:
-            raise SystemExit(f"[{ex.id}] also_blank 가 가리키는 spec 이 없다: {other_id!r}")
+            raise SystemExit(f"[{ex.id}] the spec referenced by also_blank does not exist: {other_id!r}")
         if other.source != ex.source:
             raise SystemExit(
-                f"[{ex.id}] also_blank={other_id!r} 의 source 가 다르다 — 같은 파일이어야 한다"
+                f"[{ex.id}] the source of also_blank={other_id!r} differs — it must be the same file"
             )
         other_indent = _locate(ex, text, other.body, other_id)
         text = text.replace(other.body, _other_block(other, other_indent) + "\n", 1)
@@ -226,15 +226,15 @@ def render_from_spec(ex: Exercise, all_ex: list[Exercise]) -> str:
         find = mask["find"]
         if find not in text:
             raise SystemExit(
-                f"[{ex.id}] also_mask 의 find 를 소스에서 찾지 못했다.\n"
+                f"[{ex.id}] could not find also_mask's find in the source.\n"
                 f"  source: {ex.source.relative_to(REPO_ROOT)}\n"
-                f"  소스가 바뀌었다면 exercises/specs/{ex.id}.toml 의 also_mask 를 현재 문구로 갱신한다.\n"
-                f"  찾던 첫 줄: {find.splitlines()[0] if find.splitlines() else '<empty>'!r}"
+                f"  If the source changed, update also_mask in exercises/specs/{ex.id}.toml to the current text.\n"
+                f"  first line searched for: {find.splitlines()[0] if find.splitlines() else '<empty>'!r}"
             )
         if text.count(find) > 1:
             raise SystemExit(
-                f"[{ex.id}] also_mask 의 find 가 소스에 {text.count(find)}번 나온다 — 유일해야 한다\n"
-                f"  찾던 첫 줄: {find.splitlines()[0]!r}"
+                f"[{ex.id}] also_mask's find appears {text.count(find)} times in the source — it must be unique\n"
+                f"  first line searched for: {find.splitlines()[0]!r}"
             )
         text = text.replace(find, mask["replace"], 1)
     return text

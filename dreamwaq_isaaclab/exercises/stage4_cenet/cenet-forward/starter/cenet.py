@@ -75,7 +75,7 @@ class CenetRolloutStorage:
 class CENet(nn.Module):
     """Context-Aided Estimator Network.
 
-    구조는 이 실습에서 직접 세운다 — 자세한 것은 이 실습 폴더의 README.md 를 본다.
+    You build the structure yourself in this exercise — for details see README.md in this exercise folder.
 
     Used by the DreamWaQ runner to augment actor observations with
     estimated velocity and learned context vector.
@@ -103,14 +103,14 @@ class CENet(nn.Module):
         super().__init__()
         self.device = device
 
-        # 실험용 환경변수 게이트(DWQ_CENET_*)는 이 실습을 만들 때 걷어냈다 — 전부 기본 off 라
-        # 학습이 쓰는 수식은 달라지지 않는다. 게이트가 읽던 값들(free_bits / kl_reduction /
-        # beta_anneal / beta_limit)도 같이 지웠다: 이 실습에서는 아무도 읽지 않는데 남겨 두면
-        # 무엇이 실제로 쓰이는 설정인지가 흐려진다.
-        # 왜 그런 스위치가 프로덕션 소스에 있는지는 다음 실습(cenet-loss)의 README.md 를 본다.
-        self.grad_clip = 1.0  # 이 파일에서 실제로 읽히는 유일한 설정값 — PPO 의 max_grad_norm 과 같은 예산
-        # 진단 주석이 가리키는 문턱값(차원당 KL 이 이 위면 '살아 있는' 잠재 차원).
-        # 진단 계산 자체를 아래에서 걷어냈으므로 이 실습에서는 읽는 곳이 없다.
+        # The experiment env-var gates (DWQ_CENET_*) were stripped when making this exercise — all are off by default, so
+        # the formulas used in training don't change. The values the gates read (free_bits / kl_reduction /
+        # beta_anneal / beta_limit) were removed too: nobody reads them in this exercise, and leaving them in
+        # would blur which settings are actually used.
+        # For why such switches exist in the production source, see README.md of the next exercise (cenet-loss).
+        self.grad_clip = 1.0  # The only setting actually read in this file — same budget as PPO's max_grad_norm
+        # The threshold the diagnostic comment refers to (a latent dim is 'alive' if its per-dim KL is above this).
+        # The diagnostic computation itself was stripped below, so nothing reads it in this exercise.
         self.kl_active_eps = 0.01
 
         self.encoder = nn.Sequential(
@@ -125,13 +125,13 @@ class CENet(nn.Module):
             nn.Linear(hidden_dim1, hidden_dim3), nn.ELU(),
             nn.Linear(hidden_dim3, output_dim),
         ]
-        # (실험용 디코더 게이트 삽입 지점 — 이 실습에서는 걷어냈다.)
+        # (Insertion point of the experimental decoder gate — stripped in this exercise.)
         self.decoder = nn.Sequential(*decoder_layers)
 
         print(f"{'CENet Structure':=^60}")
         print(f"Encoder MLP: {self.encoder}")
         print(f"Decoder MLP: {self.decoder}")
-        # (게이트 설정 진단 출력은 이 실습에서 걷어냈다.)
+        # (Gate-setting diagnostic output was stripped in this exercise.)
 
         self.num_mini_batches = num_mini_batches
         self.num_learning_epochs = num_learning_epochs
@@ -188,20 +188,20 @@ class CENet(nn.Module):
 
     def forward(self, obs_history):
         # ── TODO(cenet-forward) ─ level L2 ─────────────────────────────
-        # CENet 의 forward 본문을 쓴다 — 인코더 출력을 세 조각으로 가르고, 재매개변수화를 거쳐 디코더에 넣는다
-        #   hint: 인코더는 세 가지를 한 텐서로 뱉는다 — 속도 추정 하나와 context 분포의 파라미터 두 벌. 고정된 것은 속도의 차원 수뿐이고, 나머지 폭은 latent_dim1/latent_dim2 상수가 아니라 h 의 마지막 축 크기에서 재야 한다 (cfg 가 context 크기를 바꿔도 따라가야 하기 때문이다)
-        #   나머지 힌트는 README.md 의 '힌트' 절에 접혀 있다 — 먼저 안 보고 해 본다.
-        # 통과 기준은 이 실습 폴더의 README.md 를 본다.
+        # Write CENet's forward body — split the encoder output into three pieces, reparameterize, and feed the decoder
+        #   hint: The encoder emits three things in one tensor — one velocity estimate and two sets of context-distribution parameters. Only the velocity's dimension count is fixed; the remaining widths must be measured from the size of h's last axis, not from the latent_dim1/latent_dim2 constants (because it must follow along if the cfg changes the context size)
+        #   The remaining hints are folded in the 'Hints' section of README.md — try without them first.
+        # For the pass criteria, see README.md in this exercise folder.
         raise NotImplementedError("TODO(cenet-forward)")
         # ─────────────────────────────────────────────────────────────────────
 
     def _decoder_input_weight_norms(self):
-        """디코더 1층 가중치 진단 — 이 실습에서는 쓰지 않는다 (프로덕션 소스를 본다)."""
+        """Decoder first-layer weight diagnostic — not used in this exercise (see the production source)."""
         return 0.0, 0.0
 
-    # (잠재 차원별 KL 진단 도우미와 게이트용 KL 항은 이 실습에서 걷어냈다 —
-    #  둘 다 다음 실습(cenet-loss)에서 채울 KL 식을 그대로 담고 있어서 답안지가 된다.
-    #  여기서 채우는 것은 forward() 지 KL 이 아니다.)
+    # (The per-latent-dim KL diagnostic helper and the gated KL term were stripped in this exercise —
+    #  both contain exactly the KL formula you will fill in in the next exercise (cenet-loss), so they would be an answer key.
+    #  What you fill in here is forward(), not the KL.)
 
     def before_action(self, obs_history, true_vel):
         est_next_obs, est_vel, mu, logvar, context_vec = self.forward(obs_history)
@@ -231,15 +231,15 @@ class CENet(nn.Module):
         for obs_history_batch, true_vel_batch, true_onext_batch in generator:
             est_onext_batch, est_vel_batch, mu_batch, logvar_batch, _ = self.forward(obs_history_batch)
 
-            # ── 다른 실습(cenet-loss)의 구간이다 — 여기는 지금 채우지 않는다 ──────
-            raise NotImplementedError("TODO(cenet-loss) — 이 실습의 범위가 아니다")
+            # ── This is another exercise's (cenet-loss) region — don't fill it in now ──────
+            raise NotImplementedError("TODO(cenet-loss) — not in the scope of this exercise")
             # ─────────────────────────────────────────────────────────────────────
 
-            # (실험용 게이트 오버라이드는 이 실습에서 걷어냈다.)
+            # (The experimental gate override was stripped in this exercise.)
 
             self.optimizer.zero_grad()
             total_loss.backward()
-            # PPO 와 같은 예산(1.0)으로 CENet gradient 도 자른다.
+            # Clip the CENet gradient with the same budget as PPO (1.0).
             if self.grad_clip is not None:
                 torch.nn.utils.clip_grad_norm_(self.parameters(), self.grad_clip)
             self.optimizer.step()
@@ -258,8 +258,8 @@ class CENet(nn.Module):
             with torch.no_grad():
                 mean_mu_abs += mu_batch.abs().mean().item()
                 mean_sigma += (0.5 * logvar_batch).exp().mean().item()
-                # 잠재 차원별 KL 진단(kl_active_dims / kl_nats)은 이 실습에서 걷어냈다 —
-                # 그 계산이 곧 다음 실습(cenet-loss)의 답이기 때문이다. 프로덕션 소스에는 있다.
+                # The per-latent-dim KL diagnostic (kl_active_dims / kl_nats) was stripped in this exercise —
+                # that computation is exactly the answer to the next exercise (cenet-loss). It exists in the production source.
 
         if total_loss is not None:
             # ReduceLROnPlateau does float(metrics); handing it a grad-carrying tensor keeps the
@@ -293,7 +293,7 @@ class CENet(nn.Module):
 
         self.storage.clear()
 
-        # (β annealing 은 실험용 게이트라 이 실습에서 걷어냈다. 논문 eq.7 은 β 에 스케줄을
-        #  주지 않는데, "그러니 상수" 는 논문 문장이 아니라 우리 독법이다 — README 를 본다.)
+        # (β annealing is an experiment gate, so it was stripped in this exercise. Paper eq.7 gives β no schedule,
+        #  and "therefore constant" is our reading, not a sentence from the paper — see the README.)
 
         return mean_total_loss, mean_vel_loss, mean_recon_loss, mean_kl_loss
