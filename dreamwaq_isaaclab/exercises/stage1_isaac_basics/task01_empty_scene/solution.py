@@ -46,7 +46,9 @@ def main() -> None:
     sim.set_camera_view(eye=[2.5, 2.5, 2.5], target=[0.0, 0.0, 0.0])
 
     # Ground and light. Without these the robot falls forever and the screen is pitch black.
-    sim_utils.GroundPlaneCfg().func("/World/defaultGroundPlane", sim_utils.GroundPlaneCfg())
+    sim_utils.GroundPlaneCfg().func(
+        "/World/defaultGroundPlane", sim_utils.GroundPlaneCfg()
+    )
     light_cfg = sim_utils.DomeLightCfg(intensity=3000.0, color=(0.75, 0.75, 0.75))
     light_cfg.func("/World/Light", light_cfg)
 

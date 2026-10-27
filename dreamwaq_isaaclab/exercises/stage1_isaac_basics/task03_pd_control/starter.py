@@ -63,7 +63,9 @@ def main() -> None:
     sim = SimulationContext(SimulationCfg(dt=1.0 / 200.0))
     sim.set_camera_view(eye=[2.0, 0.0, 1.0], target=[0.0, 0.0, 0.3])
 
-    sim_utils.GroundPlaneCfg().func("/World/defaultGroundPlane", sim_utils.GroundPlaneCfg())
+    sim_utils.GroundPlaneCfg().func(
+        "/World/defaultGroundPlane", sim_utils.GroundPlaneCfg()
+    )
     light_cfg = sim_utils.DomeLightCfg(intensity=3000.0, color=(0.75, 0.75, 0.75))
     light_cfg.func("/World/Light", light_cfg)
 
@@ -71,7 +73,9 @@ def main() -> None:
     stiff = spawn("Stiff", y=-0.6, kp=STIFF_KP, kd=STIFF_KD)
 
     sim.reset()
-    print(f"[INFO] Soft Kp={SOFT_KP} Kd={SOFT_KD}  vs  Stiff Kp={STIFF_KP} Kd={STIFF_KD}")
+    print(
+        f"[INFO] Soft Kp={SOFT_KP} Kd={SOFT_KD}  vs  Stiff Kp={STIFF_KP} Kd={STIFF_KD}"
+    )
     print(f"[INFO] Both action=0 — 'hold the default pose'\n")
 
     # ── TODO(pd-target) ─ level L1 ─────────────────────────────
@@ -79,8 +83,12 @@ def main() -> None:
     #   hint: joint_target = default_joint_pos + action * ACTION_SCALE
     #   hint: robot.data.default_joint_pos has shape (num_envs, 12)
     #   hint: if the action is 0, the target is the default pose itself
+    def action_to_target(robot, action):
+        target_joint = robot.data.default_joint_pos + action * ACTION_SCALE
+        return target_joint
+
     # For the pass criteria, see README.md in this exercise folder.
-    raise NotImplementedError("TODO(pd-target)")
+    # raise NotImplementedError("TODO(pd-target)")
     # ─────────────────────────────────────────────────────────────────────
 
     zero = torch.zeros_like(soft.data.default_joint_pos)
@@ -96,7 +104,9 @@ def main() -> None:
         soft.update(sim.get_physics_dt())
         stiff.update(sim.get_physics_dt())
 
-    def report(robot: Articulation, target: torch.Tensor, label: str) -> tuple[float, float]:
+    def report(
+        robot: Articulation, target: torch.Tensor, label: str
+    ) -> tuple[float, float]:
         h = robot.data.root_pos_w[0, 2].item()
         err = (robot.data.joint_pos - target).abs().max().item()
         print(f"  {label:6s} height {h:.3f} m | max joint tracking error {err:.3f} rad")
@@ -109,15 +119,21 @@ def main() -> None:
     # --- Self-check ---------------------------------------------------------
     # An action of ±1 moves a joint by only ±0.25 rad.
     one = torch.ones_like(zero)
-    delta = (action_to_target(soft, one) - soft.data.default_joint_pos).abs().max().item()
+    delta = (
+        (action_to_target(soft, one) - soft.data.default_joint_pos).abs().max().item()
+    )
     assert abs(delta - ACTION_SCALE) < 1e-6, f"wrong action scale: {delta:.4f}"
-    print(f"  [PASS] action=+1 → joint target deviates from the default pose by only {delta:.2f} rad")
+    print(
+        f"  [PASS] action=+1 → joint target deviates from the default pose by only {delta:.2f} rad"
+    )
 
     assert abs(action_to_target(soft, zero) - soft.data.default_joint_pos).max() < 1e-9
     print(f"  [PASS] action=0 → target = default pose")
 
     # The stiff one tracks better. That's the definition of Kp.
-    assert e_stiff < e_soft, f"raised Kp but tracking got worse ({e_stiff:.3f} >= {e_soft:.3f})"
+    assert (
+        e_stiff < e_soft
+    ), f"raised Kp but tracking got worse ({e_stiff:.3f} >= {e_soft:.3f})"
     print(f"  [PASS] Kp↑ → tracking error↓  ({e_soft:.3f} → {e_stiff:.3f} rad)")
 
     assert h_stiff > h_soft, f"the stiff one is lower ({h_stiff:.3f} <= {h_soft:.3f})"

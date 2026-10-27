@@ -60,8 +60,17 @@ def main() -> None:
     #   hint: terrain_type is "generator"; for terrain_generator use a .copy() of ROUGH_TERRAINS_CFG
     #   hint: collision_group=-1 is needed so every env collides with this terrain (global group)
     #   hint: the grid size is set by terrain_generator.num_rows / num_cols. Here, 5 x 5
+    terrain_gen = ROUGH_TERRAINS_CFG.copy()
+    terrain_gen.num_rows = 5
+    terrain_gen.num_cols = 5
+    terrain_gen.curriculum = True
+    terrain_cfg = TerrainImporterCfg()
+    terrain_cfg.prim_path = "/World/ground"
+    terrain_cfg.terrain_type = "generator"
+    terrain_cfg.terrain_generator = terrain_gen
+    terrain_cfg.collision_group = -1
     # For the pass criteria, see README.md in this exercise folder.
-    raise NotImplementedError("TODO(terrain-cfg)")
+    # raise NotImplementedError("TODO(terrain-cfg)")
     # ─────────────────────────────────────────────────────────────────────
 
     # The TerrainImporter places one origin (env_origins) per env on the terrain.
@@ -70,29 +79,42 @@ def main() -> None:
     terrain = terrain_cfg.class_type(terrain_cfg)
 
     sim.reset()
-    print(f"[INFO] Terrain generated ({terrain_gen.num_rows} x {terrain_gen.num_cols} grid)\n")
+    print(
+        f"[INFO] Terrain generated ({terrain_gen.num_rows} x {terrain_gen.num_cols} grid)\n"
+    )
 
     origins = terrain.env_origins  # (num_envs, 3)
     print(f"  env_origins shape: {tuple(origins.shape)}")
     print(f"  x range [{origins[:, 0].min():+.2f}, {origins[:, 0].max():+.2f}] m")
     print(f"  y range [{origins[:, 1].min():+.2f}, {origins[:, 1].max():+.2f}] m")
-    print(f"  z range [{origins[:, 2].min():+.2f}, {origins[:, 2].max():+.2f}] m  ← terrain height difference\n")
+    print(
+        f"  z range [{origins[:, 2].min():+.2f}, {origins[:, 2].max():+.2f}] m  ← terrain height difference\n"
+    )
 
     # --- Self-check ---------------------------------------------------------
-    assert tuple(origins.shape) == (args_cli.num_envs, 3), f"env_origins has an unexpected shape: {origins.shape}"
+    assert tuple(origins.shape) == (
+        args_cli.num_envs,
+        3,
+    ), f"env_origins has an unexpected shape: {origins.shape}"
     print(f"  [PASS] one origin per env ({args_cli.num_envs})")
 
     # On a plane every origin's z is 0. On generated terrain each tile has a different height.
-    assert origins[:, :2].abs().max() > 1.0, "origins are bunched at one point — the terrain grid wasn't built"
+    assert (
+        origins[:, :2].abs().max() > 1.0
+    ), "origins are bunched at one point — the terrain grid wasn't built"
     print(f"  [PASS] origins are spread across the terrain grid")
 
     # Rationale for the 0.42 m robot spawn height: the terrain's boxes are up to 0.1 m.
     n_sub = len(ROUGH_TERRAINS_CFG.sub_terrains)
     assert n_sub >= 4, f"too few sub-terrains: {n_sub}"
-    print(f"  [PASS] {n_sub} sub-terrain types — flat/slopes/stairs/blocks etc. are mixed")
+    print(
+        f"  [PASS] {n_sub} sub-terrain types — flat/slopes/stairs/blocks etc. are mixed"
+    )
 
     # Foundation of the curriculum: the row is the difficulty.
-    assert terrain_gen.curriculum, "curriculum=True is required for rows to be ordered by difficulty"
+    assert (
+        terrain_gen.curriculum
+    ), "curriculum=True is required for rows to be ordered by difficulty"
     print(f"  [PASS] curriculum=True — rows become difficulty levels")
 
     print(

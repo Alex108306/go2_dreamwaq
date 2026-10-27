@@ -41,7 +41,9 @@ def main() -> None:
     sim = SimulationContext(SimulationCfg(dt=1.0 / 200.0))
     sim.set_camera_view(eye=[2.0, 2.0, 1.0], target=[0.0, 0.0, 0.3])
 
-    sim_utils.GroundPlaneCfg().func("/World/defaultGroundPlane", sim_utils.GroundPlaneCfg())
+    sim_utils.GroundPlaneCfg().func(
+        "/World/defaultGroundPlane", sim_utils.GroundPlaneCfg()
+    )
     light_cfg = sim_utils.DomeLightCfg(intensity=3000.0, color=(0.75, 0.75, 0.75))
     light_cfg.func("/World/Light", light_cfg)
 
@@ -51,8 +53,12 @@ def main() -> None:
     #   hint: set prim_path to "/World/Robot"
     #   hint: init_state.pos is an (x, y, z) tuple. Put SPAWN_HEIGHT in z
     #   hint: create it with Articulation(cfg=...)
+    go2_cfg = UNITREE_GO2_CFG.copy()
+    go2_cfg.prim_path = "/World/Robot"
+    go2_cfg.init_state.pos = (0.0, 0.0, SPAWN_HEIGHT)
+    robot = Articulation(cfg=go2_cfg)
     # For the pass criteria, see README.md in this exercise folder.
-    raise NotImplementedError("TODO(spawn-go2)")
+    # raise NotImplementedError("TODO(spawn-go2)")
     # ─────────────────────────────────────────────────────────────────────
 
     # robot.data can't be read before reset(), because the physics scene doesn't exist yet.
@@ -90,7 +96,9 @@ def main() -> None:
     print(f"  [PASS] 12 joints (4 legs × hip/thigh/calf 3)")
 
     assert "base" in robot.body_names, f"no 'base' body: {robot.body_names}"
-    print(f"  [PASS] 'base' body exists — the termination condition looks at this body's contact")
+    print(
+        f"  [PASS] 'base' body exists — the termination condition looks at this body's contact"
+    )
 
     feet = [b for b in robot.body_names if b.endswith("foot")]
     assert len(feet) == 4, f"there must be 4 feet: {feet}"
@@ -98,7 +106,9 @@ def main() -> None:
 
     # It must not sink below the ground (if it did, the spawn height or ground setup is wrong).
     height = robot.data.root_pos_w[0, 2].item()
-    assert 0.0 < height < SPAWN_HEIGHT + 0.1, f"robot height is abnormal: {height:.3f} m"
+    assert (
+        0.0 < height < SPAWN_HEIGHT + 0.1
+    ), f"robot height is abnormal: {height:.3f} m"
     print(f"  [PASS] final height {height:.3f} m — above the ground")
 
     # Body-frame gravity z: -1 when standing upright, close to 0 when lying fully on its side.
