@@ -17,7 +17,9 @@ if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
 
 
-def joint_power_l1(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
+def joint_power_l1(
+    env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+) -> torch.Tensor:
     """Penalize joint power consumption: sum(|torque| * |velocity|)."""
     asset = env.scene[asset_cfg.name]
     return torch.sum(
@@ -27,7 +29,9 @@ def joint_power_l1(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEnti
     )
 
 
-def power_distribution_l2(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
+def power_distribution_l2(
+    env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+) -> torch.Tensor:
     """Penalize uneven power distribution across joints: var(torque * velocity)^2."""
     # ── TODO(reward-power-distribution) ─ level L2 ─────────────────────────────
     # Complete the penalty for imbalanced power distribution across joints: var(torque x angular velocity)^2
@@ -36,7 +40,11 @@ def power_distribution_l2(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = Sc
     #   hint: Square the variance once more (paper Table I: var(tau . theta_dot)^2)
     #   hint: If all joints use the same power, the variance is 0, so the penalty must be 0
     # For the pass criteria, see README.md in this exercise folder.
-    raise NotImplementedError("TODO(reward-power-distribution)")
+    asset = env.scene[asset_cfg.name]
+    torque = asset.data.applied_torque[:, asset_cfg.joint_ids]
+    angular_velocity = asset.data.joint_vel[:, asset_cfg.joint_ids]
+    return torch.var(torque * angular_velocity, dim=1) ** 2
+    # raise NotImplementedError("TODO(reward-power-distribution)")
     # ─────────────────────────────────────────────────────────────────────
 
 

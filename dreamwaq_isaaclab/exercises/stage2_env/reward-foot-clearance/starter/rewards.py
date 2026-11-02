@@ -17,7 +17,9 @@ if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
 
 
-def joint_power_l1(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
+def joint_power_l1(
+    env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+) -> torch.Tensor:
     """Penalize joint power consumption: sum(|torque| * |velocity|)."""
     asset = env.scene[asset_cfg.name]
     return torch.sum(
@@ -27,11 +29,14 @@ def joint_power_l1(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEnti
     )
 
 
-def power_distribution_l2(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
+def power_distribution_l2(
+    env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+) -> torch.Tensor:
     """Penalize uneven power distribution across joints: var(torque * velocity)^2."""
     asset = env.scene[asset_cfg.name]
     joint_power = (
-        asset.data.applied_torque[:, asset_cfg.joint_ids] * asset.data.joint_vel[:, asset_cfg.joint_ids]
+        asset.data.applied_torque[:, asset_cfg.joint_ids]
+        * asset.data.joint_vel[:, asset_cfg.joint_ids]
     )
     return torch.square(torch.var(joint_power, dim=-1))
 
@@ -109,7 +114,28 @@ def foot_clearance_l2(
     #   hint: Why weight by velocity: to demand clearance only while the foot is lifted and 'moving', and not penalize a foot planted on the ground
     #   hint: Sum over the 4 feet with dim=1 to get one scalar per env
     # For the pass criteria, see README.md in this exercise folder.
-    raise NotImplementedError("TODO(reward-foot-clearance)")
+    asset = env.scene[asset_cfg.name]
+    if height_sensor_cfg is not None:
+        height_sensor = env.scene.sensors[height_sensor_cfg.name]
+        terrain_height = torch.mean(
+            torch.nan_to_num(
+                height_sensor.data.ray_hits_w[..., 2], nan=0.0, posinf=0.0, neginf=0.0
+            ),
+            dim=1,
+        )
+        feet_z_above_terrain = asset.data.body_pos_w[
+            :, :, 2
+        ] - terrain_height.unsqueeze(1)
+    else:
+        feet_z_above_terrain = asset.data.body_pos_w[:, :, 2]
+
+    lateral_velocity = torch.norm(asset.data.body_lin_vel_w[:, :, :2], dim=2)
+
+    return torch.sum(
+        (feet_z_above_terrain - desired_height) ** 2 * lateral_velocity, dim=1
+    )
+
+    # raise NotImplementedError("TODO(reward-foot-clearance)")
     # ─────────────────────────────────────────────────────────────────────
 
 

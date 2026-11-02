@@ -17,7 +17,9 @@ if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
 
 
-def joint_power_l1(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
+def joint_power_l1(
+    env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+) -> torch.Tensor:
     """Penalize joint power consumption: sum(|torque| * |velocity|)."""
     asset = env.scene[asset_cfg.name]
     return torch.sum(
@@ -27,11 +29,14 @@ def joint_power_l1(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEnti
     )
 
 
-def power_distribution_l2(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
+def power_distribution_l2(
+    env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+) -> torch.Tensor:
     """Penalize uneven power distribution across joints: var(torque * velocity)^2."""
     asset = env.scene[asset_cfg.name]
     joint_power = (
-        asset.data.applied_torque[:, asset_cfg.joint_ids] * asset.data.joint_vel[:, asset_cfg.joint_ids]
+        asset.data.applied_torque[:, asset_cfg.joint_ids]
+        * asset.data.joint_vel[:, asset_cfg.joint_ids]
     )
     return torch.square(torch.var(joint_power, dim=-1))
 
@@ -151,5 +156,11 @@ class action_smoothness_l2(ManagerTermBase):
         #   hint: Plain assignment makes it reference the same tensor. Think about why .clone() is needed
         #   hint: The reward must be one scalar per env — square the jerk of the 12 joints and sum with dim=1
         # For the pass criteria, see README.md in this exercise folder.
-        raise NotImplementedError("TODO(reward-smoothness)")
+        action_t = env.action_manager.action
+        prev_action = env.action_manager.prev_action
+        Jerk = action_t - 2 * prev_action + self.prev_prev_action
+        self.prev_prev_action = env.action_manager.prev_action.clone()
+        reward = torch.sum(Jerk**2, dim=1)
+        return reward
+        # raise NotImplementedError("TODO(reward-smoothness)")
         # ─────────────────────────────────────────────────────────────────────

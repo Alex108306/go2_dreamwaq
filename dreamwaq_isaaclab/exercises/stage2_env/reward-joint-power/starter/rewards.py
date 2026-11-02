@@ -17,7 +17,9 @@ if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
 
 
-def joint_power_l1(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
+def joint_power_l1(
+    env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+) -> torch.Tensor:
     """Penalize joint power consumption: sum(|torque| * |velocity|)."""
     # ── TODO(reward-joint-power) ─ level L1 ─────────────────────────────
     # Complete the joint power consumption penalty: sum(|torque| x |angular velocity|)
@@ -26,15 +28,22 @@ def joint_power_l1(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEnti
     #   hint: You must select the target joints with asset_cfg.joint_ids
     #   hint: Sum the 12 joints with dim=1 to get one scalar per env
     # For the pass criteria, see README.md in this exercise folder.
-    raise NotImplementedError("TODO(reward-joint-power)")
+    asset = env.scene[asset_cfg.name]
+    torque = abs(asset.data.applied_torque[:, asset_cfg.joint_ids])
+    angular_velocity = abs(asset.data.joint_vel[:, asset_cfg.joint_ids])
+    return torch.sum(torque * angular_velocity, dim=1)
+    # raise NotImplementedError("TODO(reward-joint-power)")
     # ─────────────────────────────────────────────────────────────────────
 
 
-def power_distribution_l2(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
+def power_distribution_l2(
+    env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+) -> torch.Tensor:
     """Penalize uneven power distribution across joints: var(torque * velocity)^2."""
     asset = env.scene[asset_cfg.name]
     joint_power = (
-        asset.data.applied_torque[:, asset_cfg.joint_ids] * asset.data.joint_vel[:, asset_cfg.joint_ids]
+        asset.data.applied_torque[:, asset_cfg.joint_ids]
+        * asset.data.joint_vel[:, asset_cfg.joint_ids]
     )
     return torch.square(torch.var(joint_power, dim=-1))
 
