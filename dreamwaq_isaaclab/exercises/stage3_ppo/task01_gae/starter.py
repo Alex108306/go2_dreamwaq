@@ -5,6 +5,7 @@ correspond to in `rsl_rl/algorithms/ppo.py` is compared in `task03_rsl_rl_map/`.
 
     python ppo.py            # train on the toy environment and check that the reward rises
 """
+
 from __future__ import annotations
 
 import sys
@@ -21,7 +22,12 @@ for _cand in (_HERE, _HERE.parent):
         sys.path.insert(0, str(_cand))
         break
 
-from toy_env import ACT_DIM, OBS_DIM, VelocityTrackingEnv, standing_still_reward  # noqa: E402
+from toy_env import (
+    ACT_DIM,
+    OBS_DIM,
+    VelocityTrackingEnv,
+    standing_still_reward,
+)  # noqa: E402
 
 
 class ActorCritic(nn.Module):
@@ -32,16 +38,22 @@ class ActorCritic(nn.Module):
     also the same as rsl_rl and DreamWaQ.
     """
 
-    def __init__(self, obs_dim: int = OBS_DIM, act_dim: int = ACT_DIM, hidden: int = 64):
+    def __init__(
+        self, obs_dim: int = OBS_DIM, act_dim: int = ACT_DIM, hidden: int = 64
+    ):
         super().__init__()
         self.actor = nn.Sequential(
-            nn.Linear(obs_dim, hidden), nn.ELU(),
-            nn.Linear(hidden, hidden), nn.ELU(),
+            nn.Linear(obs_dim, hidden),
+            nn.ELU(),
+            nn.Linear(hidden, hidden),
+            nn.ELU(),
             nn.Linear(hidden, act_dim),
         )
         self.critic = nn.Sequential(
-            nn.Linear(obs_dim, hidden), nn.ELU(),
-            nn.Linear(hidden, hidden), nn.ELU(),
+            nn.Linear(obs_dim, hidden),
+            nn.ELU(),
+            nn.Linear(hidden, hidden),
+            nn.ELU(),
             nn.Linear(hidden, 1),
         )
         # init_noise_std = 1.0 (rsl_rl default and the DreamWaQ value)
@@ -93,7 +105,23 @@ def compute_gae(
     #   hint: at done steps there's no continuation to the next state, so cut it with (1 - done)
     #   hint: returns = advantages + values (the critic's regression target)
     # For the pass criteria, see README.md in this exercise folder.
-    raise NotImplementedError("TODO(ppo-gae)")
+    for i in reversed(range(T)):
+        if i == T - 1:
+            delta = (
+                rewards[i, :] + gamma * last_value * (1 - dones[i, :]) - values[i, :]
+            )
+            advantages[i, :] = delta
+        else:
+            delta = (
+                rewards[i, :] + gamma * values[i + 1] * (1 - dones[i, :]) - values[i, :]
+            )
+            advantages[i, :] = (
+                delta + gamma * lam * (1 - dones[i, :]) * advantages[i + 1, :]
+            )
+
+        returns = advantages + values
+
+    # raise NotImplementedError("TODO(ppo-gae)")
     # ─────────────────────────────────────────────────────────────────────
 
     return returns, advantages
@@ -159,16 +187,23 @@ def train(
         for _ in range(steps_per_env):
             action, log_prob, value = model.act(obs)
             next_obs, reward, done = env.step(action)
-            buf_obs.append(obs); buf_act.append(action); buf_logp.append(log_prob)
-            buf_rew.append(reward); buf_done.append(done.float()); buf_val.append(value)
+            buf_obs.append(obs)
+            buf_act.append(action)
+            buf_logp.append(log_prob)
+            buf_rew.append(reward)
+            buf_done.append(done.float())
+            buf_val.append(value)
             obs = next_obs
 
         with torch.no_grad():
             last_value = model.value(obs)
 
-        b_obs = torch.stack(buf_obs); b_act = torch.stack(buf_act)
-        b_logp = torch.stack(buf_logp); b_rew = torch.stack(buf_rew)
-        b_done = torch.stack(buf_done); b_val = torch.stack(buf_val)
+        b_obs = torch.stack(buf_obs)
+        b_act = torch.stack(buf_act)
+        b_logp = torch.stack(buf_logp)
+        b_rew = torch.stack(buf_rew)
+        b_done = torch.stack(buf_done)
+        b_val = torch.stack(buf_val)
 
         # --- 2. Advantages ---
         returns, advantages = compute_gae(b_rew, b_val, b_done, last_value)
@@ -188,8 +223,12 @@ def train(
                 dist = model.distribution(f_obs[mb])
                 log_prob = dist.log_prob(f_act[mb]).sum(-1)
                 total, *_ = ppo_losses(
-                    log_prob, f_logp[mb], f_adv[mb],
-                    model.value(f_obs[mb]), f_ret[mb], dist.entropy().sum(-1),
+                    log_prob,
+                    f_logp[mb],
+                    f_adv[mb],
+                    model.value(f_obs[mb]),
+                    f_ret[mb],
+                    dist.entropy().sum(-1),
                 )
                 optim.zero_grad()
                 total.backward()
@@ -199,7 +238,9 @@ def train(
         mean_reward = b_rew.mean().item()
         history.append(mean_reward)
         if verbose and (it % 20 == 0 or it == iterations - 1):
-            print(f"  iter {it:4d} | mean reward {mean_reward:.4f} | std {model.log_std.exp().mean():.3f}")
+            print(
+                f"  iter {it:4d} | mean reward {mean_reward:.4f} | std {model.log_std.exp().mean():.3f}"
+            )
 
     return model, history
 
@@ -209,5 +250,11 @@ if __name__ == "__main__":
     print(f"Standing-still reward (floor) : {baseline:.4f}\n")
     _, history = train()
     final = sum(history[-10:]) / 10
-    print(f"\nFinal mean reward : {final:.4f}  (floor {baseline:.4f}, perfect tracking 1.0)")
-    print("Training succeeded" if final > baseline + 0.2 else "Training failed — didn't beat the floor")
+    print(
+        f"\nFinal mean reward : {final:.4f}  (floor {baseline:.4f}, perfect tracking 1.0)"
+    )
+    print(
+        "Training succeeded"
+        if final > baseline + 0.2
+        else "Training failed — didn't beat the floor"
+    )

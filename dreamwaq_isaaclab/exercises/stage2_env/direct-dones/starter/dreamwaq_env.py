@@ -18,7 +18,13 @@ from isaaclab.envs import DirectRLEnv
 from isaaclab.markers import VisualizationMarkers
 from isaaclab.markers.config import BLUE_ARROW_X_MARKER_CFG, GREEN_ARROW_X_MARKER_CFG
 from isaaclab.sensors import ContactSensor, RayCaster
-from isaaclab.utils.math import quat_from_euler_xyz, quat_mul, quat_rotate_inverse, yaw_quat, wrap_to_pi
+from isaaclab.utils.math import (
+    quat_from_euler_xyz,
+    quat_mul,
+    quat_rotate_inverse,
+    yaw_quat,
+    wrap_to_pi,
+)
 
 from .dreamwaq_env_cfg import DreamWaQDirectEnvCfg
 
@@ -41,14 +47,18 @@ class DreamWaQEnv(DirectRLEnv):
 
     cfg: DreamWaQDirectEnvCfg
 
-    def __init__(self, cfg: DreamWaQDirectEnvCfg, render_mode: str | None = None, **kwargs):
+    def __init__(
+        self, cfg: DreamWaQDirectEnvCfg, render_mode: str | None = None, **kwargs
+    ):
         super().__init__(cfg, render_mode, **kwargs)
 
         # --- action buffers ---
         num_actions = gym.spaces.flatdim(self.single_action_space)
         self._actions = torch.zeros(self.num_envs, num_actions, device=self.device)
         self._prev_actions = torch.zeros(self.num_envs, num_actions, device=self.device)
-        self._prev_prev_actions = torch.zeros(self.num_envs, num_actions, device=self.device)
+        self._prev_prev_actions = torch.zeros(
+            self.num_envs, num_actions, device=self.device
+        )
 
         # --- command buffers ---
         # [lin_vel_x, lin_vel_y, ang_vel_z, heading]
@@ -57,7 +67,9 @@ class DreamWaQEnv(DirectRLEnv):
 
         # --- observation history buffer ---
         self._obs_history_buf = torch.zeros(
-            self.num_envs, self.cfg.len_obs_history, self.cfg.observation_space,
+            self.num_envs,
+            self.cfg.len_obs_history,
+            self.cfg.observation_space,
             device=self.device,
         )
 
@@ -66,9 +78,15 @@ class DreamWaQEnv(DirectRLEnv):
             self._delay_time = torch.zeros(self.num_envs, 1, device=self.device)
             self._last_lin_vel_b = torch.zeros(self.num_envs, 3, device=self.device)
             self._last_ang_vel_b = torch.zeros(self.num_envs, 3, device=self.device)
-            self._last_projected_gravity = torch.zeros(self.num_envs, 3, device=self.device)
-            self._last_joint_pos = torch.zeros(self.num_envs, num_actions, device=self.device)
-            self._last_joint_vel = torch.zeros(self.num_envs, num_actions, device=self.device)
+            self._last_projected_gravity = torch.zeros(
+                self.num_envs, 3, device=self.device
+            )
+            self._last_joint_pos = torch.zeros(
+                self.num_envs, num_actions, device=self.device
+            )
+            self._last_joint_vel = torch.zeros(
+                self.num_envs, num_actions, device=self.device
+            )
 
         # --- true velocity buffer (always available for runner) ---
         self._true_lin_vel_b = torch.zeros(self.num_envs, 3, device=self.device)
@@ -90,7 +108,8 @@ class DreamWaQEnv(DirectRLEnv):
             "dof_pos_limits",
         ]
         self._episode_sums = {
-            name: torch.zeros(self.num_envs, device=self.device) for name in self._reward_names
+            name: torch.zeros(self.num_envs, device=self.device)
+            for name in self._reward_names
         }
 
         # --- termination stats, in the same units as the manager stack ---
@@ -100,7 +119,10 @@ class DreamWaQEnv(DirectRLEnv):
         # (a raw count would scale with num_envs). Column order: [base_contact, time_out].
         self._termination_names = ["base_contact", "time_out"]
         self._last_episode_dones = torch.zeros(
-            self.num_envs, len(self._termination_names), dtype=torch.bool, device=self.device
+            self.num_envs,
+            len(self._termination_names),
+            dtype=torch.bool,
+            device=self.device,
         )
 
         # --- command tracking metrics (matches Manager version's command_manager metrics) ---
@@ -131,11 +153,15 @@ class DreamWaQEnv(DirectRLEnv):
         self._command_vis = None
         self._heading_vis = None
         if self.sim.has_gui:
-            cmd_vis_cfg = GREEN_ARROW_X_MARKER_CFG.replace(prim_path="/Visuals/Command/velocity_goal")
+            cmd_vis_cfg = GREEN_ARROW_X_MARKER_CFG.replace(
+                prim_path="/Visuals/Command/velocity_goal"
+            )
             cmd_vis_cfg.markers["arrow"].scale = (1.2, 0.4, 0.4)
             self._command_vis = VisualizationMarkers(cmd_vis_cfg)
 
-            heading_vis_cfg = BLUE_ARROW_X_MARKER_CFG.replace(prim_path="/Visuals/Command/heading")
+            heading_vis_cfg = BLUE_ARROW_X_MARKER_CFG.replace(
+                prim_path="/Visuals/Command/heading"
+            )
             heading_vis_cfg.markers["arrow"].scale = (1.2, 0.4, 0.4)
             self._heading_vis = VisualizationMarkers(heading_vis_cfg)
 
@@ -201,7 +227,9 @@ class DreamWaQEnv(DirectRLEnv):
     def _pre_physics_step(self, actions: torch.Tensor):
         self._prev_prev_actions = self._prev_actions.clone()
         self._prev_actions = self._actions.clone()
-        self._actions = actions.clone().clamp(-self.cfg.clip_actions, self.cfg.clip_actions)
+        self._actions = actions.clone().clamp(
+            -self.cfg.clip_actions, self.cfg.clip_actions
+        )
         # PD position target: action_scale * action + default_joint_pos
         self._processed_actions = (
             self.cfg.action_scale * self._actions + self._robot.data.default_joint_pos
@@ -254,17 +282,36 @@ class DreamWaQEnv(DirectRLEnv):
             if not self.cfg.include_lin_vel_in_obs:
                 lin_vel_b = lin_vel_b + torch.empty_like(lin_vel_b).uniform_(-0.2, 0.2)
             ang_vel_b = ang_vel_b + torch.empty_like(ang_vel_b).uniform_(-0.05, 0.05)
-            projected_gravity = projected_gravity + torch.empty_like(projected_gravity).uniform_(-0.05, 0.05)
-            joint_pos_rel = joint_pos_rel + torch.empty_like(joint_pos_rel).uniform_(-0.01, 0.01)
+            projected_gravity = projected_gravity + torch.empty_like(
+                projected_gravity
+            ).uniform_(-0.05, 0.05)
+            joint_pos_rel = joint_pos_rel + torch.empty_like(joint_pos_rel).uniform_(
+                -0.01, 0.01
+            )
             joint_vel = joint_vel + torch.empty_like(joint_vel).uniform_(-0.075, 0.075)
 
         # Store last values before delay interpolation
         if self.cfg.system_delay:
-            cur_lin_vel_b = self._delay_time * self._last_lin_vel_b + (1 - self._delay_time) * lin_vel_b
-            cur_ang_vel_b = self._delay_time * self._last_ang_vel_b + (1 - self._delay_time) * ang_vel_b
-            cur_gravity = self._delay_time * self._last_projected_gravity + (1 - self._delay_time) * projected_gravity
-            cur_joint_pos = self._delay_time * self._last_joint_pos + (1 - self._delay_time) * joint_pos_rel
-            cur_joint_vel = self._delay_time * self._last_joint_vel + (1 - self._delay_time) * joint_vel
+            cur_lin_vel_b = (
+                self._delay_time * self._last_lin_vel_b
+                + (1 - self._delay_time) * lin_vel_b
+            )
+            cur_ang_vel_b = (
+                self._delay_time * self._last_ang_vel_b
+                + (1 - self._delay_time) * ang_vel_b
+            )
+            cur_gravity = (
+                self._delay_time * self._last_projected_gravity
+                + (1 - self._delay_time) * projected_gravity
+            )
+            cur_joint_pos = (
+                self._delay_time * self._last_joint_pos
+                + (1 - self._delay_time) * joint_pos_rel
+            )
+            cur_joint_vel = (
+                self._delay_time * self._last_joint_vel
+                + (1 - self._delay_time) * joint_vel
+            )
 
             self._last_lin_vel_b = lin_vel_b.clone()
             self._last_ang_vel_b = ang_vel_b.clone()
@@ -280,21 +327,27 @@ class DreamWaQEnv(DirectRLEnv):
 
         # Velocity commands [v_x, v_y, omega_z], scaled by (lin_vel, lin_vel, ang_vel)
         commands_3 = self._commands[:, :3] * self._commands.new_tensor(
-            [self.cfg.obs_scale_lin_vel, self.cfg.obs_scale_lin_vel, self.cfg.obs_scale_ang_vel]
+            [
+                self.cfg.obs_scale_lin_vel,
+                self.cfg.obs_scale_lin_vel,
+                self.cfg.obs_scale_ang_vel,
+            ]
         )
 
         # Build policy observation (45 dims for Base/Waq, 48 for Oracle)
         obs_parts = []
         if self.cfg.include_lin_vel_in_obs:
             obs_parts.append(lin_vel_b)  # +3 dims for Oracle
-        obs_parts.extend([
-            ang_vel_b,          # 3
-            projected_gravity,  # 3
-            commands_3,         # 3
-            joint_pos_rel,      # 12
-            joint_vel,          # 12
-            self._actions,      # 12
-        ])
+        obs_parts.extend(
+            [
+                ang_vel_b,  # 3
+                projected_gravity,  # 3
+                commands_3,  # 3
+                joint_pos_rel,  # 12
+                joint_vel,  # 12
+                self._actions,  # 12
+            ]
+        )
         obs = torch.cat(obs_parts, dim=-1)
 
         # Build privileged (critic) observation matching the original IsaacGym layout.
@@ -327,17 +380,21 @@ class DreamWaQEnv(DirectRLEnv):
         # state = clean actor obs ⊕ privileged_obs (disturb_3 + heights_187)
         state_parts = []
         if self.cfg.include_lin_vel_in_obs:
-            state_parts.append(self._true_lin_vel_b * self.cfg.obs_scale_lin_vel)  # +3 for Oracle only
-        state_parts.extend([
-            true_ang_vel_b,         # 3
-            true_gravity,           # 3
-            commands_3,             # 3
-            true_joint_pos_rel,     # 12
-            true_joint_vel,         # 12
-            self._actions,          # 12
-            disturb_force,          # 3   (privileged: original puts disturb BEFORE heights)
-            height_data,            # 187
-        ])
+            state_parts.append(
+                self._true_lin_vel_b * self.cfg.obs_scale_lin_vel
+            )  # +3 for Oracle only
+        state_parts.extend(
+            [
+                true_ang_vel_b,  # 3
+                true_gravity,  # 3
+                commands_3,  # 3
+                true_joint_pos_rel,  # 12
+                true_joint_vel,  # 12
+                self._actions,  # 12
+                disturb_force,  # 3   (privileged: original puts disturb BEFORE heights)
+                height_data,  # 187
+            ]
+        )
         state = torch.cat(state_parts, dim=-1)
 
         # Update observation history buffer
@@ -369,34 +426,55 @@ class DreamWaQEnv(DirectRLEnv):
         lin_vel_error = torch.sum(
             torch.square(self._commands[:, :2] - lin_vel_b[:, :2]), dim=1
         )
-        track_lin_vel = torch.exp(-lin_vel_error / self.cfg.tracking_sigma) * self.cfg.rew_track_lin_vel_xy
+        track_lin_vel = (
+            torch.exp(-lin_vel_error / self.cfg.tracking_sigma)
+            * self.cfg.rew_track_lin_vel_xy
+        )
 
         ang_vel_error = torch.square(self._commands[:, 2] - ang_vel_b[:, 2])
-        track_ang_vel = torch.exp(-ang_vel_error / self.cfg.tracking_sigma) * self.cfg.rew_track_ang_vel_z
+        track_ang_vel = (
+            torch.exp(-ang_vel_error / self.cfg.tracking_sigma)
+            * self.cfg.rew_track_ang_vel_z
+        )
 
         # --- penalties ---
         lin_vel_z = torch.square(lin_vel_b[:, 2]) * self.cfg.rew_lin_vel_z
-        ang_vel_xy = torch.sum(torch.square(ang_vel_b[:, :2]), dim=1) * self.cfg.rew_ang_vel_xy
-        orientation = torch.sum(torch.square(projected_gravity[:, :2]), dim=1) * self.cfg.rew_orientation
+        ang_vel_xy = (
+            torch.sum(torch.square(ang_vel_b[:, :2]), dim=1) * self.cfg.rew_ang_vel_xy
+        )
+        orientation = (
+            torch.sum(torch.square(projected_gravity[:, :2]), dim=1)
+            * self.cfg.rew_orientation
+        )
 
         # Base height (legged_robot.py:1589-1595): square(mean(root_z - terrain_z) - target).
         # RayCaster returns inf for rays that miss the terrain mesh; filter those out so a
         # single missed ray doesn't pollute the mean into ±inf and the reward into -inf.
         root_z = self._robot.data.root_pos_w[:, 2]
         ray_hits_z = torch.nan_to_num(
-            self._height_scanner.data.ray_hits_w[..., 2], nan=0.0, posinf=0.0, neginf=0.0
+            self._height_scanner.data.ray_hits_w[..., 2],
+            nan=0.0,
+            posinf=0.0,
+            neginf=0.0,
         )
         mean_terrain_z = torch.mean(ray_hits_z, dim=1)
         base_height_above_terrain = root_z - mean_terrain_z
-        base_height = torch.square(base_height_above_terrain - self.cfg.base_height_target) * self.cfg.rew_base_height
+        base_height = (
+            torch.square(base_height_above_terrain - self.cfg.base_height_target)
+            * self.cfg.rew_base_height
+        )
 
         # Joint acceleration
-        dof_acc = torch.sum(torch.square(self._robot.data.joint_acc), dim=1) * self.cfg.rew_dof_acc
+        dof_acc = (
+            torch.sum(torch.square(self._robot.data.joint_acc), dim=1)
+            * self.cfg.rew_dof_acc
+        )
 
         # Action rate
-        action_rate = torch.sum(
-            torch.square(self._actions - self._prev_actions), dim=1
-        ) * self.cfg.rew_action_rate
+        action_rate = (
+            torch.sum(torch.square(self._actions - self._prev_actions), dim=1)
+            * self.cfg.rew_action_rate
+        )
 
         # Smoothness (jerk)
         jerk = self._actions - 2.0 * self._prev_actions + self._prev_prev_actions
@@ -405,13 +483,17 @@ class DreamWaQEnv(DirectRLEnv):
         # Joint power
         torques = self._robot.data.applied_torque
         joint_vel = self._robot.data.joint_vel
-        joint_power = torch.sum(
-            torch.abs(torques) * torch.abs(joint_vel), dim=1
-        ) * self.cfg.rew_joint_power
+        joint_power = (
+            torch.sum(torch.abs(torques) * torch.abs(joint_vel), dim=1)
+            * self.cfg.rew_joint_power
+        )
 
         # Power distribution
         power_per_joint = torques * joint_vel
-        power_dist = torch.square(torch.var(power_per_joint, dim=-1)) * self.cfg.rew_power_distribution
+        power_dist = (
+            torch.square(torch.var(power_per_joint, dim=-1))
+            * self.cfg.rew_power_distribution
+        )
 
         # Foot clearance (legged_robot.py:1699-1711):
         #   feet_z_above_terrain = feet_pos_w[:, :, 2] - measured_heights_under_feet
@@ -425,20 +507,29 @@ class DreamWaQEnv(DirectRLEnv):
         feet_pos_w = self._robot.data.body_pos_w[:, self._feet_ids, :]
         feet_vel_w = self._robot.data.body_lin_vel_w[:, self._feet_ids, :]
         feet_z_above_terrain = feet_pos_w[:, :, 2] - mean_terrain_z[:, None]
-        feet_lateral_speed = torch.sqrt(feet_vel_w[:, :, 0] ** 2 + feet_vel_w[:, :, 1] ** 2)
-        foot_clearance = torch.sum(
-            (feet_z_above_terrain - self.cfg.desired_foot_clearance) ** 2 * feet_lateral_speed,
-            dim=1,
-        ) * self.cfg.rew_foot_clearance
+        feet_lateral_speed = torch.sqrt(
+            feet_vel_w[:, :, 0] ** 2 + feet_vel_w[:, :, 1] ** 2
+        )
+        foot_clearance = (
+            torch.sum(
+                (feet_z_above_terrain - self.cfg.desired_foot_clearance) ** 2
+                * feet_lateral_speed,
+                dim=1,
+            )
+            * self.cfg.rew_foot_clearance
+        )
 
         # DOF position limits
         joint_pos = self._robot.data.joint_pos
         limits = self._robot.data.soft_joint_pos_limits
-        out_of_limits = torch.sum(
-            (joint_pos - limits[:, :, 1]).clamp(min=0.0)
-            + (limits[:, :, 0] - joint_pos).clamp(min=0.0),
-            dim=1,
-        ) * self.cfg.rew_dof_pos_limits
+        out_of_limits = (
+            torch.sum(
+                (joint_pos - limits[:, :, 1]).clamp(min=0.0)
+                + (limits[:, :, 0] - joint_pos).clamp(min=0.0),
+                dim=1,
+            )
+            * self.cfg.rew_dof_pos_limits
+        )
 
         # Collect all rewards
         rewards = {
@@ -487,8 +578,20 @@ class DreamWaQEnv(DirectRLEnv):
         #   hint: Reduce the axes in order: force-vector norm(dim=-1) → history max max(dim=1)[0] → threshold comparison → bodies any(dim=1)
         #   hint: Use the max over history, not the mean. If it hit even once in the 3 frames, it fell
         #   hint: The threshold is self.cfg.termination_contact_force (1.0 N) — same as the original legged_gym
+        time_out = self.episode_length_buf >= self.max_episode_length - 1
+        base_contact = self._contact_sensor.data.net_forces_w_history.torch
+        base_contact = torch.any(
+            torch.max(
+                torch.norm(
+                    base_contact[:, :, self._termination_contact_ids, :], dim=-1
+                ),
+                dim=1,
+            ).values
+            > self.cfg.termination_contact_force,
+            dim=1,
+        )
         # For the pass criteria, see README.md in this exercise folder.
-        raise NotImplementedError("TODO(direct-dones)")
+        # raise NotImplementedError("TODO(direct-dones)")
         # ─────────────────────────────────────────────────────────────────────
 
         # Remember which term ended each env's most recent episode (see __init__) — matches
@@ -515,7 +618,8 @@ class DreamWaQEnv(DirectRLEnv):
         # command (_resample_commands runs later in this method).
         if self._init_done and self._terrain.terrain_origins is not None:
             distance = torch.norm(
-                self._robot.data.root_pos_w[env_ids, :2] - self._terrain.env_origins[env_ids, :2],
+                self._robot.data.root_pos_w[env_ids, :2]
+                - self._terrain.env_origins[env_ids, :2],
                 dim=1,
             )
             terrain_size = self.cfg.terrain.terrain_generator.size[0]
@@ -555,7 +659,9 @@ class DreamWaQEnv(DirectRLEnv):
 
         # Reset system delay
         if self.cfg.system_delay:
-            self._delay_time[env_ids] = torch.rand(len(env_ids), 1, device=self.device) * 0.25
+            self._delay_time[env_ids] = (
+                torch.rand(len(env_ids), 1, device=self.device) * 0.25
+            )
             self._last_lin_vel_b[env_ids] = 0.0
             self._last_ang_vel_b[env_ids] = 0.0
             self._last_projected_gravity[env_ids] = 0.0
@@ -603,11 +709,19 @@ class DreamWaQEnv(DirectRLEnv):
     def _resample_commands(self, env_ids: torch.Tensor):
         """Resample velocity commands for given environments."""
         n = len(env_ids)
-        self._commands[env_ids, 0] = torch.empty(n, device=self.device).uniform_(*self.cfg.lin_vel_x_range)
-        self._commands[env_ids, 1] = torch.empty(n, device=self.device).uniform_(*self.cfg.lin_vel_y_range)
-        self._commands[env_ids, 2] = torch.empty(n, device=self.device).uniform_(*self.cfg.ang_vel_z_range)
+        self._commands[env_ids, 0] = torch.empty(n, device=self.device).uniform_(
+            *self.cfg.lin_vel_x_range
+        )
+        self._commands[env_ids, 1] = torch.empty(n, device=self.device).uniform_(
+            *self.cfg.lin_vel_y_range
+        )
+        self._commands[env_ids, 2] = torch.empty(n, device=self.device).uniform_(
+            *self.cfg.ang_vel_z_range
+        )
         if self.cfg.heading_command:
-            self._commands[env_ids, 3] = torch.empty(n, device=self.device).uniform_(*self.cfg.heading_range)
+            self._commands[env_ids, 3] = torch.empty(n, device=self.device).uniform_(
+                *self.cfg.heading_range
+            )
 
     def _update_commands(self):
         """Update commands: resample expired commands and compute heading-based yaw rate."""
@@ -623,11 +737,16 @@ class DreamWaQEnv(DirectRLEnv):
 
         # Heading command → angular velocity
         if self.cfg.heading_command:
-            forward = torch.tensor([1.0, 0.0, 0.0], device=self.device).expand(self.num_envs, -1)
+            forward = torch.tensor([1.0, 0.0, 0.0], device=self.device).expand(
+                self.num_envs, -1
+            )
             heading = torch.atan2(
                 self._robot.data.root_quat_w[:, 1] * self._robot.data.root_quat_w[:, 2]
-                + self._robot.data.root_quat_w[:, 0] * self._robot.data.root_quat_w[:, 3],
-                0.5 - self._robot.data.root_quat_w[:, 2] ** 2 - self._robot.data.root_quat_w[:, 3] ** 2,
+                + self._robot.data.root_quat_w[:, 0]
+                * self._robot.data.root_quat_w[:, 3],
+                0.5
+                - self._robot.data.root_quat_w[:, 2] ** 2
+                - self._robot.data.root_quat_w[:, 3] ** 2,
             )
             heading_error = wrap_to_pi(self._commands[:, 3] - heading)
             self._commands[:, 2] = torch.clamp(
@@ -673,7 +792,9 @@ class DreamWaQEnv(DirectRLEnv):
         device = materials.device
         fr_low, fr_high = self.cfg.friction_range
         num_buckets = self.cfg.friction_num_buckets
-        bucket_friction = torch.empty(num_buckets, device=device).uniform_(fr_low, fr_high)
+        bucket_friction = torch.empty(num_buckets, device=device).uniform_(
+            fr_low, fr_high
+        )
         bucket_ids = torch.randint(0, num_buckets, (self.num_envs,), device=device)
         per_env_friction = bucket_friction[bucket_ids]  # (num_envs,)
         materials[..., 0] = per_env_friction.unsqueeze(-1)  # static
@@ -697,7 +818,9 @@ class DreamWaQEnv(DirectRLEnv):
         mass_offset = torch.empty(self.num_envs, device=device).uniform_(low, high)
         masses[:, base_body_idx[0]] += mass_offset
         env_ids = torch.arange(self.num_envs, dtype=torch.int32, device=device)
-        self._robot.root_physx_view.set_masses(wp.from_torch(masses.contiguous()), wp.from_torch(env_ids))
+        self._robot.root_physx_view.set_masses(
+            wp.from_torch(masses.contiguous()), wp.from_torch(env_ids)
+        )
 
     def _randomize_com(self):
         """legged_robot.py:_process_rigid_body_props (L562-567): com.{x,y,z} += U(range) for all bodies."""
@@ -706,10 +829,14 @@ class DreamWaQEnv(DirectRLEnv):
         device = coms.device
         n_bodies = coms.shape[1]
         low, high = self.cfg.com_range
-        com_offset = torch.empty(self.num_envs, n_bodies, 3, device=device).uniform_(low, high)
+        com_offset = torch.empty(self.num_envs, n_bodies, 3, device=device).uniform_(
+            low, high
+        )
         coms[..., 0:3] += com_offset
         env_ids = torch.arange(self.num_envs, dtype=torch.int32, device=device)
-        self._robot.root_physx_view.set_coms(wp.from_torch(coms.contiguous()), wp.from_torch(env_ids))
+        self._robot.root_physx_view.set_coms(
+            wp.from_torch(coms.contiguous()), wp.from_torch(env_ids)
+        )
 
     def _randomize_pd_gains(self):
         """legged_robot.py uses self.cfg.domain_rand.{p,d}_gains_range to scale gains per env.
@@ -720,13 +847,21 @@ class DreamWaQEnv(DirectRLEnv):
         d_low, d_high = self.cfg.d_gains_range
         for actuator in self._robot.actuators.values():
             n_envs, n_joints = actuator.stiffness.shape
-            stiffness_scale = torch.empty(n_envs, n_joints, device=actuator.stiffness.device).uniform_(p_low, p_high)
-            damping_scale = torch.empty(n_envs, n_joints, device=actuator.damping.device).uniform_(d_low, d_high)
+            stiffness_scale = torch.empty(
+                n_envs, n_joints, device=actuator.stiffness.device
+            ).uniform_(p_low, p_high)
+            damping_scale = torch.empty(
+                n_envs, n_joints, device=actuator.damping.device
+            ).uniform_(d_low, d_high)
             actuator.stiffness *= stiffness_scale
             actuator.damping *= damping_scale
             if isinstance(actuator, ImplicitActuator):
-                self._robot.write_joint_stiffness_to_sim_index(stiffness=actuator.stiffness, joint_ids=actuator.joint_indices)
-                self._robot.write_joint_damping_to_sim_index(damping=actuator.damping, joint_ids=actuator.joint_indices)
+                self._robot.write_joint_stiffness_to_sim_index(
+                    stiffness=actuator.stiffness, joint_ids=actuator.joint_indices
+                )
+                self._robot.write_joint_damping_to_sim_index(
+                    damping=actuator.damping, joint_ids=actuator.joint_indices
+                )
 
     def _randomize_motor_strength(self):
         """Motor strength factor (paper Table II; go2_config randomize_motor_strength).
@@ -741,12 +876,18 @@ class DreamWaQEnv(DirectRLEnv):
         low, high = self.cfg.motor_strength_range
         for actuator in self._robot.actuators.values():
             n_envs, _ = actuator.stiffness.shape
-            factor = torch.empty(n_envs, 1, device=actuator.stiffness.device).uniform_(low, high)
+            factor = torch.empty(n_envs, 1, device=actuator.stiffness.device).uniform_(
+                low, high
+            )
             actuator.stiffness *= factor
             actuator.damping *= factor
             if isinstance(actuator, ImplicitActuator):
-                self._robot.write_joint_stiffness_to_sim_index(stiffness=actuator.stiffness, joint_ids=actuator.joint_indices)
-                self._robot.write_joint_damping_to_sim_index(damping=actuator.damping, joint_ids=actuator.joint_indices)
+                self._robot.write_joint_stiffness_to_sim_index(
+                    stiffness=actuator.stiffness, joint_ids=actuator.joint_indices
+                )
+                self._robot.write_joint_damping_to_sim_index(
+                    damping=actuator.damping, joint_ids=actuator.joint_indices
+                )
 
     def _reset_root_states(self, env_ids: torch.Tensor):
         """legged_robot.py:_reset_root_states (L761-791).
@@ -759,12 +900,20 @@ class DreamWaQEnv(DirectRLEnv):
         # pos + terrain origin + xy noise
         default_root_state[:, :3] += self._terrain.env_origins[env_ids]
         xy_low, xy_high = self.cfg.init_xy_range
-        default_root_state[:, :2] += torch.empty(n, 2, device=self.device).uniform_(xy_low, xy_high)
+        default_root_state[:, :2] += torch.empty(n, 2, device=self.device).uniform_(
+            xy_low, xy_high
+        )
         # velocity (lin + ang) ±0.5
         v_low, v_high = self.cfg.init_vel_range
-        default_root_state[:, 7:13] = torch.empty(n, 6, device=self.device).uniform_(v_low, v_high)
-        self._robot.write_root_pose_to_sim_index(root_pose=default_root_state[:, :7], env_ids=env_ids)
-        self._robot.write_root_velocity_to_sim_index(root_velocity=default_root_state[:, 7:13], env_ids=env_ids)
+        default_root_state[:, 7:13] = torch.empty(n, 6, device=self.device).uniform_(
+            v_low, v_high
+        )
+        self._robot.write_root_pose_to_sim_index(
+            root_pose=default_root_state[:, :7], env_ids=env_ids
+        )
+        self._robot.write_root_velocity_to_sim_index(
+            root_velocity=default_root_state[:, 7:13], env_ids=env_ids
+        )
 
     def _reset_dofs(self, env_ids: torch.Tensor):
         """legged_robot.py:_reset_dofs (L740-759): pos = default × U[0.5, 1.5], vel = 0."""
@@ -782,7 +931,9 @@ class DreamWaQEnv(DirectRLEnv):
         The sampled impulse is stored in `self._disturb_force` for the privileged obs.
         """
         max_v = self.cfg.max_push_vel_xy
-        self._disturb_force = torch.empty(self.num_envs, 3, device=self.device).uniform_(-max_v, max_v)
+        self._disturb_force = torch.empty(
+            self.num_envs, 3, device=self.device
+        ).uniform_(-max_v, max_v)
         # Add to current root velocity, write back (lin + ang).
         full_vel = self._robot.data.root_vel_w.clone()  # (N, 6) lin(3) + ang(3)
         full_vel[:, :3] += self._disturb_force
@@ -805,7 +956,9 @@ class DreamWaQEnv(DirectRLEnv):
         # --- green: command arrow ---
         xy_vel = self._commands[:, :2]
         default_scale = self._command_vis.cfg.markers["arrow"].scale
-        cmd_scale = torch.tensor(default_scale, device=self.device).repeat(xy_vel.shape[0], 1)
+        cmd_scale = torch.tensor(default_scale, device=self.device).repeat(
+            xy_vel.shape[0], 1
+        )
         cmd_scale[:, 0] *= torch.linalg.norm(xy_vel, dim=1) * 3.0
 
         heading_angle = torch.atan2(xy_vel[:, 1], xy_vel[:, 0])
@@ -816,7 +969,9 @@ class DreamWaQEnv(DirectRLEnv):
 
         # --- blue: heading arrow (yaw-only of body, fixed length) ---
         heading_default = self._heading_vis.cfg.markers["arrow"].scale
-        heading_scale = torch.tensor(heading_default, device=self.device).repeat(self.num_envs, 1)
+        heading_scale = torch.tensor(heading_default, device=self.device).repeat(
+            self.num_envs, 1
+        )
         heading_quat_w = yaw_quat(self._robot.data.root_quat_w)
         self._heading_vis.visualize(base_pos_w, heading_quat_w, heading_scale)
 
@@ -831,7 +986,8 @@ class DreamWaQEnv(DirectRLEnv):
     def get_true_vel(self) -> torch.Tensor:
         """Return the true body-frame linear velocity [num_envs, 3], **scaled** by the lin-vel
         observation scale. This is the CENet's velocity-estimation target — it mirrors the
-        original ``get_true_vel() = base_lin_vel * obs_scales.lin_vel`` (legged_robot.py:1301)."""
+        original ``get_true_vel() = base_lin_vel * obs_scales.lin_vel`` (legged_robot.py:1301).
+        """
         return self._true_lin_vel_b * self.cfg.obs_scale_lin_vel
 
     # ------------------------------------------------------------------
@@ -854,7 +1010,8 @@ class DreamWaQEnv(DirectRLEnv):
         lin_vel_b = self._robot.data.root_lin_vel_b
         ang_vel_b = self._robot.data.root_ang_vel_b
         self._command_error_vel_xy += (
-            torch.norm(self._commands[:, :2] - lin_vel_b[:, :2], dim=-1) / max_command_step
+            torch.norm(self._commands[:, :2] - lin_vel_b[:, :2], dim=-1)
+            / max_command_step
         )
         self._command_error_vel_yaw += (
             torch.abs(self._commands[:, 2] - ang_vel_b[:, 2]) / max_command_step
