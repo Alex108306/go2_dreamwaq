@@ -8,6 +8,7 @@ Wrap up here the two things task03 passed over as "what we don't have".
 
     python starter.py
 """
+
 from __future__ import annotations
 
 import re
@@ -26,7 +27,9 @@ _CFG_PATH = (
 LOG_STD_MIN, LOG_STD_MAX = -5.0, 0.0
 
 
-def adapt_learning_rate(kl_mean: float, learning_rate: float, desired_kl: float = 0.01) -> float:
+def adapt_learning_rate(
+    kl_mean: float, learning_rate: float, desired_kl: float = 0.01
+) -> float:
     """Adjust the learning rate based on KL (rsl_rl `PPO.update`'s adaptive schedule).
 
     Args:
@@ -45,7 +48,17 @@ def adapt_learning_rate(kl_mean: float, learning_rate: float, desired_kl: float 
     #   hint: bound it with lower bound 1e-5 and upper bound 1e-2 (use max / min)
     #   hint: don't raise it if kl_mean is 0 (rsl_rl's kl_mean > 0.0 condition)
     # For the pass criteria, see README.md in this exercise folder.
-    raise NotImplementedError("TODO(ppo-cfg)")
+    if kl_mean > 0:
+        if kl_mean > desired_kl * 2:
+            learning_rate = max(1e-5, learning_rate / 1.5)
+        elif kl_mean < desired_kl / 2:
+            learning_rate = min(1e-2, learning_rate * 1.5)
+        else:
+            learning_rate = learning_rate
+        return learning_rate
+    else:
+        return learning_rate
+    # raise NotImplementedError("TODO(ppo-cfg)")
     # ─────────────────────────────────────────────────────────────────────
 
 
@@ -95,7 +108,9 @@ def main() -> int:
     else:
         print("  (couldn't find the cfg file — you may be running outside the repo)")
 
-    print("\n  These values weren't picked arbitrarily; they match §III-B of the DreamWaQ paper.")
+    print(
+        "\n  These values weren't picked arbitrarily; they match §III-B of the DreamWaQ paper."
+    )
 
     print("\n" + "=" * 72)
     print(" 2. Adaptive learning rate — lr moves based on KL")
@@ -114,7 +129,9 @@ def main() -> int:
         lr = new_lr
 
     assert lr > 1e-3, "lr should rise as KL gets smaller"
-    print("\n  [PASS] Cautious when KL is large, bold when small — it sets its own step size.")
+    print(
+        "\n  [PASS] Cautious when KL is large, bold when small — it sets its own step size."
+    )
 
     print("\n" + "=" * 72)
     print(" 3. log_std clamp — a problem this repo actually ran into")
@@ -129,10 +146,14 @@ def main() -> int:
     print(f"\n  {'step':>6}  {'no clamp':>22}  {'with clamp':>22}")
     guarded = drift.clone()
     for step in range(1, 6):
-        drift = drift - 2.0                      # mimics a runaway gradient
-        guarded = clamp_log_std(guarded - 2.0)   # same as the hook applied after every optimizer step
-        print(f"  {step:6d}  log_std={drift[0]:8.2f} std={drift[0].exp():8.2e}"
-              f"  log_std={guarded[0]:6.2f} std={guarded[0].exp():6.3f}")
+        drift = drift - 2.0  # mimics a runaway gradient
+        guarded = clamp_log_std(
+            guarded - 2.0
+        )  # same as the hook applied after every optimizer step
+        print(
+            f"  {step:6d}  log_std={drift[0]:8.2f} std={drift[0].exp():8.2e}"
+            f"  log_std={guarded[0]:6.2f} std={guarded[0].exp():6.3f}"
+        )
 
     nan_case = clamp_log_std(torch.tensor([float("-inf"), float("nan")]))
     print(f"\n  when -inf, nan come in -> {nan_case.tolist()}  (revived)")
@@ -141,7 +162,9 @@ def main() -> int:
     assert float(guarded[0]) >= LOG_STD_MIN
     print(f"\n  [PASS] log_std stays within [{LOG_STD_MIN:.0f}, {LOG_STD_MAX:.0f}].")
     print("\n  Actual code: dreamwaq_manager/scripts/rsl_rl/train.py")
-    print("            _register_std_clamp_for_all_runners() — applied as a hook after the optimizer step.")
+    print(
+        "            _register_std_clamp_for_all_runners() — applied as a hook after the optimizer step."
+    )
     return 0
 
 

@@ -8,6 +8,7 @@ cenet-loss).
     python starter.py                # train briefly on toy data and see whether the loss decreases
     python starter.py --beta 10.0    # apply strong regularization and see posterior collapse with your own eyes
 """
+
 from __future__ import annotations
 
 import argparse
@@ -18,13 +19,17 @@ import torch.nn as nn
 INPUT_DIM, HIDDEN_DIM, LATENT_DIM = 8, 32, 2
 
 
-def make_toy_batch(batch: int, input_dim: int = INPUT_DIM, seed: int | None = None) -> torch.Tensor:
+def make_toy_batch(
+    batch: int, input_dim: int = INPUT_DIM, seed: int | None = None
+) -> torch.Tensor:
     """Toy observations: a 2-dim latent structure spread out into input_dim dimensions.
 
     The true degrees of freedom are only 2, but it's observed in 8 dims — a situation made for the VAE to uncover.
     In DreamWaQ terms, this corresponds to "the true state of the terrain is summarized by a few numbers, but the robot only sees a 225-dim history".
     """
-    gen = torch.Generator().manual_seed(0)  # the spreading matrix must always be the same
+    gen = torch.Generator().manual_seed(
+        0
+    )  # the spreading matrix must always be the same
     mixer = torch.randn(LATENT_DIM, input_dim, generator=gen)
     if seed is not None:
         torch.manual_seed(seed)
@@ -40,13 +45,71 @@ def make_toy_batch(batch: int, input_dim: int = INPUT_DIM, seed: int | None = No
 #   hint: the kl returned by loss already has self.beta multiplied in (total = recon + kl). Same convention as CENet
 #   hint: the exact required API is written in README.md in this folder
 # For the pass criteria, see README.md in this exercise folder.
-raise NotImplementedError("TODO(vae-core)")
+class ToyVAE(nn.Module):
+    def __init__(
+        self,
+        input_dim=INPUT_DIM,
+        hidden_dim=HIDDEN_DIM,
+        latent_dim=LATENT_DIM,
+        beta=1.0,
+    ):
+        super().__init__()
+        self.latent_dim = latent_dim
+        self.beta = beta
+
+        self.encoder = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.ELU(),
+            nn.Linear(hidden_dim, latent_dim * 2),
+        )
+        self.decoder = nn.Sequential(
+            nn.Linear(latent_dim, hidden_dim),
+            nn.ELU(),
+            nn.Linear(hidden_dim, input_dim),
+        )
+
+    def encode(self, x):
+        h = self.encoder(x)
+        mu, logvar = h[:, : self.latent_dim], h[:, self.latent_dim :]
+        return mu, logvar
+
+    def reparameterize(self, mu, logvar):
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        z = mu + std * eps
+        return z
+
+    def decode(self, z):
+        x_hat = self.decoder(z)
+        return x_hat
+
+    def forward(self, x):
+        mu, logvar = self.encode(x)
+        z = self.reparameterize(mu, logvar)
+        x_hat = self.decode(z)
+        return x_hat, mu, logvar, z
+
+    def loss(self, x):
+        x_hat, mu, logvar, z = self.forward(x)
+        recon = nn.MSELoss()(x_hat, x)
+        kl = (
+            -0.5
+            * torch.mean(1 + logvar - mu**2 - torch.exp(logvar), dim=1).mean()
+            * self.beta
+        )
+        total = recon + kl
+        return total, recon, kl
+
+
+# raise NotImplementedError("TODO(vae-core)")
 # ─────────────────────────────────────────────────────────────────────
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--beta", type=float, default=1.0, help="KL weight. Compare 1.0 and 10.0")
+    ap.add_argument(
+        "--beta", type=float, default=1.0, help="KL weight. Compare 1.0 and 10.0"
+    )
     args = ap.parse_args()
 
     torch.manual_seed(0)
@@ -64,7 +127,9 @@ def main() -> int:
         if step == 0:
             first = total.item()
         if step % 60 == 0:
-            print(f"  step {step:3d}  total={total.item():8.4f}  recon={recon.item():8.4f}  kl={kl.item():7.4f}")
+            print(
+                f"  step {step:3d}  total={total.item():8.4f}  recon={recon.item():8.4f}  kl={kl.item():7.4f}"
+            )
         last = total.item()
 
     print(f"\nfirst loss {first:.4f} → last loss {last:.4f}")

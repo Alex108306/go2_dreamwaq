@@ -33,7 +33,13 @@ from dreamwaq_manager.algorithms.cenet import CENet
 class OnPolicyRunnerWaq(OnPolicyRunner):
     """On-policy runner with integrated CENet for DreamWaQ velocity estimation."""
 
-    def __init__(self, env: VecEnv, train_cfg: dict, log_dir: str | None = None, device: str = "cpu") -> None:
+    def __init__(
+        self,
+        env: VecEnv,
+        train_cfg: dict,
+        log_dir: str | None = None,
+        device: str = "cpu",
+    ) -> None:
         # Extract DreamWaQ-specific config before parent init
         self.waq_cfg = train_cfg.get("waq", {})
         self.vae_cfg = train_cfg.get("vae", {})
@@ -47,10 +53,14 @@ class OnPolicyRunnerWaq(OnPolicyRunner):
         # only the proprioceptive base. num_extero is derived from the env's policy obs dim.
         self.use_exteroception = self.waq_cfg.get("use_exteroception", False)
         _policy_dim = env.get_observations()["policy"].shape[-1]
-        self.num_extero = (_policy_dim - self.num_base_obs) if self.use_exteroception else 0
+        self.num_extero = (
+            (_policy_dim - self.num_base_obs) if self.use_exteroception else 0
+        )
 
         # Augmented actor obs dim: base_obs + est_vel + context (+ exteroception)
-        self.num_augmented_obs = self.num_base_obs + self.num_est_vel + self.num_context + self.num_extero
+        self.num_augmented_obs = (
+            self.num_base_obs + self.num_est_vel + self.num_context + self.num_extero
+        )
 
         # Temporarily patch env.get_observations so the parent __init__
         # builds the actor with the augmented dimension (64) instead of base (45).
@@ -61,7 +71,8 @@ class OnPolicyRunnerWaq(OnPolicyRunner):
             # Pad policy obs from 45 → 64 with zeros (est_vel + context placeholder)
             policy_obs = obs["policy"]
             padding = torch.zeros(
-                policy_obs.shape[0], self.num_est_vel + self.num_context,
+                policy_obs.shape[0],
+                self.num_est_vel + self.num_context,
                 device=policy_obs.device,
             )
             obs["policy"] = torch.cat([policy_obs, padding], dim=-1)
@@ -86,7 +97,9 @@ class OnPolicyRunnerWaq(OnPolicyRunner):
         # DreamWaQ's true_vel_rms). est_vel is then predicted in normalized-velocity space.
         self.true_vel_rms = EmpiricalNormalization(shape=self.num_est_vel).to(device)
         self._nan_warned = False
-        print("[INFO] Waq: actor normalizer=Identity; base-obs(45) normalized via obs_rms (est_vel/context raw)")
+        print(
+            "[INFO] Waq: actor normalizer=Identity; base-obs(45) normalized via obs_rms (est_vel/context raw)"
+        )
 
         # Register optimizer hook to clamp log_std_param after each step.
         # Without this, log_std can drift to extreme values during long training,
@@ -152,9 +165,15 @@ class OnPolicyRunnerWaq(OnPolicyRunner):
         mean action was clamped to [-5, 0] and could never be positive. Measured across the six
         2026-08 runs: all 6 x 12 = 72 output biases were <= 0, several within 1e-5 of the bound.
         """
-        log_std_params = [m.log_std_param for m in self.alg.actor.modules() if hasattr(m, "log_std_param")]
+        log_std_params = [
+            m.log_std_param
+            for m in self.alg.actor.modules()
+            if hasattr(m, "log_std_param")
+        ]
         if not log_std_params:
-            print("[WARN] Waq: no log_std_param on the actor — std clamp hook NOT registered")
+            print(
+                "[WARN] Waq: no log_std_param on the actor — std clamp hook NOT registered"
+            )
             return
 
         def _clamp_std_hook(optimizer, args, kwargs):
@@ -163,9 +182,13 @@ class OnPolicyRunnerWaq(OnPolicyRunner):
                     param.clamp_(-5.0, 0.0)
 
         self.alg.optimizer.register_step_post_hook(_clamp_std_hook)
-        print(f"[INFO] Registered log_std_param clamp hook [-5, 0] on {len(log_std_params)} actor parameter(s)")
+        print(
+            f"[INFO] Registered log_std_param clamp hook [-5, 0] on {len(log_std_params)} actor parameter(s)"
+        )
 
-    def _update_obs_history(self, obs_base: torch.Tensor, dones: torch.Tensor | None = None):
+    def _update_obs_history(
+        self, obs_base: torch.Tensor, dones: torch.Tensor | None = None
+    ):
         """Shift history buffer and append latest observation.
 
         Args:
@@ -196,16 +219,26 @@ class OnPolicyRunnerWaq(OnPolicyRunner):
 
     def _extract_base_obs(self, obs) -> torch.Tensor:
         """Extract the proprioceptive base obs (first ``num_base_obs`` of the policy group)."""
-        policy = obs["policy"] if (hasattr(obs, "__getitem__") and "policy" in obs.keys()) else obs
+        policy = (
+            obs["policy"]
+            if (hasattr(obs, "__getitem__") and "policy" in obs.keys())
+            else obs
+        )
         # With exteroception the policy is [proprio(45), height_scan]; CENet/actor-base use proprio.
         return policy[:, : self.num_base_obs] if self.use_exteroception else policy
 
     def _extract_extero(self, obs) -> torch.Tensor:
         """Extract the exteroception (height_scan) = everything after the proprioceptive base."""
-        policy = obs["policy"] if (hasattr(obs, "__getitem__") and "policy" in obs.keys()) else obs
+        policy = (
+            obs["policy"]
+            if (hasattr(obs, "__getitem__") and "policy" in obs.keys())
+            else obs
+        )
         return policy[:, self.num_base_obs :]
 
-    def _build_actor_obs(self, base_obs, vel_input, context_vec, src_obs) -> torch.Tensor:
+    def _build_actor_obs(
+        self, base_obs, vel_input, context_vec, src_obs
+    ) -> torch.Tensor:
         """Build the actor observation: [norm(base), vel, context] (+ exteroception)."""
         # ── TODO(runner-augment) ─ level L2 ─────────────────────────────
         # Augment the actor observation 45 → 64 — concatenate the estimated velocity and context to the normalized base observation
@@ -215,7 +248,12 @@ class OnPolicyRunnerWaq(OnPolicyRunner):
         #   hint: Rough terrain has use_exteroception True, so height_scan is appended at the end (self._extract_extero(src_obs))
         #   hint: Put the result in actor_obs — the NaN warning and nan_to_num below use that name (that part is given)
         # For the pass criteria, see README.md in this exercise folder.
-        raise NotImplementedError("TODO(runner-augment)")
+        actor_obs = torch.cat(
+            (self._norm_base(base_obs), vel_input, context_vec), dim=1
+        )
+        if self.use_exteroception == True:
+            actor_obs = torch.cat((actor_obs, self._extract_extero(src_obs)), dim=1)
+        # raise NotImplementedError("TODO(runner-augment)")
         # ─────────────────────────────────────────────────────────────────────
         # nan=0.0 keeps training alive, but silently: a NaN CENet washes the 19 estimate dims to
         # zero and the reward curve looks normal. One archived run trained 3000 iterations as
@@ -277,7 +315,9 @@ class OnPolicyRunnerWaq(OnPolicyRunner):
 
         return policy
 
-    def learn(self, num_learning_iterations: int, init_at_random_ep_len: bool = False) -> None:
+    def learn(
+        self, num_learning_iterations: int, init_at_random_ep_len: bool = False
+    ) -> None:
         """Run the learning loop with integrated CENet training."""
         # Randomize initial episode lengths
         if init_at_random_ep_len:
@@ -338,8 +378,8 @@ class OnPolicyRunnerWaq(OnPolicyRunner):
                     true_vel = self.true_vel_rms(true_vel)
 
                     # CENet forward pass
-                    est_next_obs, est_vel, mu, logvar, context_vec = self.cenet.before_action(
-                        obs_history, true_vel
+                    est_next_obs, est_vel, mu, logvar, context_vec = (
+                        self.cenet.before_action(obs_history, true_vel)
                     )
 
                     # Clamp CENet outputs to prevent NaN propagation
@@ -351,13 +391,18 @@ class OnPolicyRunnerWaq(OnPolicyRunner):
                     # source, so a rollout was either all-estimated or all-true with zero
                     # batch diversity.
                     if self.ada_boot:
-                        boot_mask = torch.rand(est_vel.shape[0], 1, device=est_vel.device) < self.boot_prob
+                        boot_mask = (
+                            torch.rand(est_vel.shape[0], 1, device=est_vel.device)
+                            < self.boot_prob
+                        )
                         vel_input = torch.where(boot_mask, est_vel, true_vel)
                     else:
                         vel_input = est_vel
 
                     # Actor obs: norm(base) + vel + context (+ exteroception); est/ctx raw
-                    augmented_actor_obs = self._build_actor_obs(base_obs, vel_input, context_vec, obs)
+                    augmented_actor_obs = self._build_actor_obs(
+                        base_obs, vel_input, context_vec, obs
+                    )
 
                     # Build augmented obs dict for RSL-RL
                     # Actor uses augmented obs, critic uses its own privileged obs
@@ -368,13 +413,19 @@ class OnPolicyRunnerWaq(OnPolicyRunner):
                     actions = self.alg.act(augmented_obs)
 
                     # Step the environment
-                    obs, rewards, dones, extras = self.env.step(actions.to(self.env.device))
+                    obs, rewards, dones, extras = self.env.step(
+                        actions.to(self.env.device)
+                    )
 
                     # Check for NaN
                     if self.cfg.get("check_for_nan", True):
                         check_nan(obs, rewards, dones)
 
-                    obs, rewards, dones = obs.to(self.device), rewards.to(self.device), dones.to(self.device)
+                    obs, rewards, dones = (
+                        obs.to(self.device),
+                        rewards.to(self.device),
+                        dones.to(self.device),
+                    )
 
                     # Get next base obs for CENet after_action. Store the NORMALIZED next obs as
                     # the recon target so encoder input (normalized history) and decoder target are
@@ -390,20 +441,32 @@ class OnPolicyRunnerWaq(OnPolicyRunner):
                     next_true_vel = self._extract_true_vel(obs)
                     next_obs_history = self._get_flat_obs_history()
                     with torch.inference_mode():
-                        _, next_est_vel, _, _, next_context_vec = self.cenet.forward(next_obs_history)
+                        _, next_est_vel, _, _, next_context_vec = self.cenet.forward(
+                            next_obs_history
+                        )
                         next_est_vel = torch.clamp(next_est_vel, -10.0, 10.0)
                         next_context_vec = torch.clamp(next_context_vec, -10.0, 10.0)
 
-                    next_policy_obs = self._build_actor_obs(next_base_obs, next_est_vel, next_context_vec, obs)
+                    next_policy_obs = self._build_actor_obs(
+                        next_base_obs, next_est_vel, next_context_vec, obs
+                    )
                     next_augmented_obs = obs.clone()
                     next_augmented_obs["policy"] = next_policy_obs
 
                     # Process environment step (updates normalizers, records transitions)
-                    self.alg.process_env_step(next_augmented_obs, rewards, dones, extras)
+                    self.alg.process_env_step(
+                        next_augmented_obs, rewards, dones, extras
+                    )
 
                     # Logging
-                    intrinsic_rewards = self.alg.intrinsic_rewards if self.cfg["algorithm"]["rnd_cfg"] else None
-                    self.logger.process_env_step(rewards, dones, extras, intrinsic_rewards)
+                    intrinsic_rewards = (
+                        self.alg.intrinsic_rewards
+                        if self.cfg["algorithm"]["rnd_cfg"]
+                        else None
+                    )
+                    self.logger.process_env_step(
+                        rewards, dones, extras, intrinsic_rewards
+                    )
 
                     # (boot_prob follows the per-iteration ramp set at the top of the loop; the old
                     # per-step timeout-rate nudge is gone — it was overwritten by the ramp on every
@@ -418,7 +481,9 @@ class OnPolicyRunnerWaq(OnPolicyRunner):
                 true_vel_final = self._extract_true_vel(obs)
                 obs_history_final = self._get_flat_obs_history()
                 with torch.inference_mode():
-                    _, est_vel_final, _, _, context_vec_final = self.cenet.forward(obs_history_final)
+                    _, est_vel_final, _, _, context_vec_final = self.cenet.forward(
+                        obs_history_final
+                    )
                     est_vel_final = torch.clamp(est_vel_final, -10.0, 10.0)
                     context_vec_final = torch.clamp(context_vec_final, -10.0, 10.0)
                 final_augmented_obs = obs.clone()
@@ -428,7 +493,9 @@ class OnPolicyRunnerWaq(OnPolicyRunner):
                 self.alg.compute_returns(final_augmented_obs)
 
             # CENet update
-            mean_total_loss, mean_vel_loss, mean_recon_loss, mean_kl_loss = self.cenet.update()
+            mean_total_loss, mean_vel_loss, mean_recon_loss, mean_kl_loss = (
+                self.cenet.update()
+            )
 
             # PPO update
             loss_dict = self.alg.update()
@@ -462,7 +529,9 @@ class OnPolicyRunnerWaq(OnPolicyRunner):
                 loss_dict=loss_dict,
                 learning_rate=self.alg.optimizer.param_groups[0]["lr"],
                 action_std=self.alg.get_policy().output_std,
-                rnd_weight=self.alg.rnd.weight if self.cfg["algorithm"]["rnd_cfg"] else None,
+                rnd_weight=(
+                    self.alg.rnd.weight if self.cfg["algorithm"]["rnd_cfg"] else None
+                ),
             )
 
             # Save model
@@ -473,7 +542,11 @@ class OnPolicyRunnerWaq(OnPolicyRunner):
         # adding num_learning_iterations again double-counted it and named the final checkpoint
         # model_5999.pt for a 3000-iteration run (Base/Oracle, on the stock runner, wrote
         # model_2999.pt). Match the stock OnPolicyRunner so all three stacks agree.
-        self.save(os.path.join(self.logger.log_dir, f"model_{self.current_learning_iteration}.pt"))
+        self.save(
+            os.path.join(
+                self.logger.log_dir, f"model_{self.current_learning_iteration}.pt"
+            )
+        )
 
     def save(self, path: str, infos=None) -> None:
         """Save model checkpoint including CENet state."""
@@ -504,10 +577,18 @@ class OnPolicyRunnerWaq(OnPolicyRunner):
         }
 
         # Save actor and critic normalizers if they exist
-        if hasattr(self.alg.actor, "obs_normalizer") and self.alg.actor.obs_normalization:
+        if (
+            hasattr(self.alg.actor, "obs_normalizer")
+            and self.alg.actor.obs_normalization
+        ):
             saved_dict["actor_normalizer"] = self.alg.actor.obs_normalizer.state_dict()
-        if hasattr(self.alg.critic, "obs_normalizer") and self.alg.critic.obs_normalization:
-            saved_dict["critic_normalizer"] = self.alg.critic.obs_normalizer.state_dict()
+        if (
+            hasattr(self.alg.critic, "obs_normalizer")
+            and self.alg.critic.obs_normalization
+        ):
+            saved_dict["critic_normalizer"] = (
+                self.alg.critic.obs_normalizer.state_dict()
+            )
 
         torch.save(saved_dict, path)
         # Upload the checkpoint to wandb/neptune, as the stock ``OnPolicyRunner.save()`` does.
@@ -521,7 +602,9 @@ class OnPolicyRunnerWaq(OnPolicyRunner):
 
         # Load actor. Old Waq checkpoints only have "model_state_dict" (actor weights under the
         # legacy key); new ones also have "actor_state_dict". Prefer the explicit key, fall back.
-        self.alg.actor.load_state_dict(loaded_dict.get("actor_state_dict", loaded_dict["model_state_dict"]))
+        self.alg.actor.load_state_dict(
+            loaded_dict.get("actor_state_dict", loaded_dict["model_state_dict"])
+        )
         # Critic is absent from every Waq checkpoint written before this fix — skip it then.
         if "critic_state_dict" in loaded_dict:
             self.alg.critic.load_state_dict(loaded_dict["critic_state_dict"])
@@ -530,7 +613,9 @@ class OnPolicyRunnerWaq(OnPolicyRunner):
         if "cenet_state_dict" in loaded_dict:
             self.cenet.load_state_dict(loaded_dict["cenet_state_dict"])
             if load_optimizer and "cenet_optimizer_state_dict" in loaded_dict:
-                self.cenet.optimizer.load_state_dict(loaded_dict["cenet_optimizer_state_dict"])
+                self.cenet.optimizer.load_state_dict(
+                    loaded_dict["cenet_optimizer_state_dict"]
+                )
             if "cenet_beta" in loaded_dict:
                 self.cenet.beta = loaded_dict["cenet_beta"]
 
@@ -549,10 +634,18 @@ class OnPolicyRunnerWaq(OnPolicyRunner):
             self.alg.optimizer.load_state_dict(loaded_dict["optimizer_state_dict"])
 
         # Load normalizers
-        if "actor_normalizer" in loaded_dict and hasattr(self.alg.actor, "obs_normalizer"):
-            self.alg.actor.obs_normalizer.load_state_dict(loaded_dict["actor_normalizer"])
-        if "critic_normalizer" in loaded_dict and hasattr(self.alg.critic, "obs_normalizer"):
-            self.alg.critic.obs_normalizer.load_state_dict(loaded_dict["critic_normalizer"])
+        if "actor_normalizer" in loaded_dict and hasattr(
+            self.alg.actor, "obs_normalizer"
+        ):
+            self.alg.actor.obs_normalizer.load_state_dict(
+                loaded_dict["actor_normalizer"]
+            )
+        if "critic_normalizer" in loaded_dict and hasattr(
+            self.alg.critic, "obs_normalizer"
+        ):
+            self.alg.critic.obs_normalizer.load_state_dict(
+                loaded_dict["critic_normalizer"]
+            )
 
         # Load iteration count
         self.current_learning_iteration = loaded_dict.get("iter", 0)
